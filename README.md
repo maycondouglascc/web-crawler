@@ -125,7 +125,7 @@ context = browser.new_context(viewport={"width": 1920, "height": 1080})
 
 **Visual Crawler: Arquivo de entrada não encontrado**
 
-- Crie o arquivo `FP_Trivent_Funds.txt` com uma URL por linha
+- Crie o arquivo `url.txt` com uma URL por linha
 
 **Navegador não inicia**
 
