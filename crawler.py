@@ -90,7 +90,7 @@ def crawl_website(start_url):
     return grouped_links
 
 # --- EXECUTION ---
-target_site = "https://thrivent.com/" # <--- PUT YOUR URL HERE
+target_site = "url.com/" # <--- PUT YOUR URL HERE
 results = crawl_website(target_site)
 
 print("\n\n--- CRAWL FINISHED ---")
@@ -106,5 +106,6 @@ with open("grouped_sitemap.txt", "w", encoding="utf-8") as f:
             f.write(link + "\n")
         
         f.write("\n") # Empty line between groups
+
 
 print("Results saved to 'grouped_sitemap.txt'")
