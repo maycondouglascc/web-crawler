@@ -4,7 +4,7 @@ from urllib.parse import urlparse
 from playwright.sync_api import sync_playwright
 
 # --- CONFIGURATION ---
-INPUT_FILE = "FP_Trivent_Funds.txt"
+INPUT_FILE = "url.txt"
 OUTPUT_DIR = "screenshots_from_list"
 # ---------------------
 
@@ -82,4 +82,5 @@ def process_url_list():
         print("(Saved list of failures to 'failed_urls.txt')")
 
 if __name__ == "__main__":
+
     process_url_list()
