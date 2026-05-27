@@ -1,0 +1,8 @@
+# Discovered Pages
+# Review and confirm before capturing
+# (Remove lines if you don't want to capture them)
+
+/
+/projects/danone-north-america
+/projects/gskpromx
+/projects/thrivent-fp
