@@ -7,14 +7,11 @@ Um projeto Python com scripts para rastreamento, captura de screenshots, anális
 - **crawler.py** — Web crawling e mapa do site (agrupado por tipo de arquivo)
 - **visual_crawler.py** — Screenshots de uma lista de URLs em resolução fixa (1920x1080)
 - **multi_width_crawler.py** — Screenshots em múltiplas larguras (mobile, tablet, desktop, ultrawide)
-- **ai_crawler.py** — Screenshots + análise de conteúdo com IA local (Ollama)
-- **multi_width_ai_crawler.py** — Screenshots em múltiplas larguras + análise de conteúdo com IA
 
 ## 🛠️ Pré-requisitos
 
 - **Python 3.8 ou superior**
 - **pip** (gerenciador de pacotes Python)
-- **Ollama** (somente para scripts com análise AI) — [Download aqui](https://ollama.ai)
 
 ## 🚀 Instalação
 
@@ -57,8 +54,6 @@ ollama run llama3.2
 ```
 
 Deixe rodando em background (porta 11434). Os scripts conectarão automaticamente.
-
-## 📖 Uso
 
 ## 📖 Uso
 
