@@ -47,19 +47,17 @@ def discover_pages(host, port):
     base_url = f"http://{host}:{port}"
     domain = f"{host}:{port}"
     
-    urls_to_visit = {"/"}
+    urls_to_visit = ["/"]
     visited_urls = set()
-    pages = set()
+    pages = []
     
     print(f"\n🔍 Discovering pages from {base_url}...")
     
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
-        context = browser.new_context(viewport={"width": 1920, "height": 1080})
-        page = context.new_page()
         
         while urls_to_visit:
-            current_path = urls_to_visit.pop()
+            current_path = urls_to_visit.pop(0)
             
             if current_path in visited_urls:
                 continue
@@ -68,47 +66,62 @@ def discover_pages(host, port):
             visited_urls.add(current_path)
             
             try:
-                page.goto(current_url, timeout=15000, wait_until="domcontentloaded")
+                context = browser.new_context(viewport={"width": 1920, "height": 1080})
+                page = context.new_page()
                 
-                # Extract all internal links
+                page.goto(current_url, timeout=20000, wait_until="networkidle")
+                
+                # Extract all internal links - improved selector
                 links = page.evaluate("""
                     () => {
-                        const links = [];
-                        document.querySelectorAll('a').forEach(a => {
-                            const href = a.getAttribute('href');
-                            if (href && !href.startsWith('http') && !href.startsWith('#') && 
-                                !href.startsWith('mailto:') && !href.startsWith('tel:')) {
-                                links.push(href);
+                        const links = new Set();
+                        
+                        // Get all links from <a> tags
+                        document.querySelectorAll('a[href]').forEach(a => {
+                            let href = a.getAttribute('href');
+                            if (href) {
+                                // Skip external links, anchors, mailto, tel
+                                if (!href.startsWith('http') && 
+                                    !href.startsWith('#') && 
+                                    !href.startsWith('mailto:') && 
+                                    !href.startsWith('tel:') &&
+                                    !href.startsWith('javascript:')) {
+                                    // Normalize path
+                                    href = href.split('?')[0].split('#')[0];
+                                    if (href && href !== '/') {
+                                        links.add(href);
+                                    }
+                                }
                             }
                         });
-                        return links;
+                        
+                        return Array.from(links);
                     }
                 """)
                 
-                # Add page to results
-                clean_path = current_path.rstrip('/')
-                pages.add(clean_path if clean_path else "/")
+                # Add current page to results
+                if current_path not in pages:
+                    pages.append(current_path)
+                    print(f"  ✓ Found: {current_path}")
                 
                 # Process discovered links
                 for link in links:
                     # Normalize path
-                    clean_link = link.split('?')[0].split('#')[0].rstrip('/')
-                    if not clean_link:
-                        clean_link = "/"
-                    
-                    # Only add internal links
-                    if clean_link not in visited_urls:
-                        urls_to_visit.add(clean_link)
+                    clean_link = link.rstrip('/')
+                    if clean_link and clean_link not in visited_urls:
+                        urls_to_visit.append(clean_link)
                 
-                print(f"  ✓ Found: {current_path}")
+                context.close()
                 
             except Exception as e:
                 print(f"  ⚠️  Error on {current_path}: {str(e)[:40]}")
+                visited_urls.discard(current_path)  # Try again later
         
-        context.close()
         browser.close()
     
-    return sorted(list(pages))
+    # Sort pages for consistent output
+    pages.sort()
+    return pages
 
 def save_discovery_file(pages):
     """Save discovered pages to file for user review"""
