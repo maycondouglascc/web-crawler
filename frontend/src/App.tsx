@@ -132,6 +132,7 @@ export function App() {
   useEffect(() => {
     let interval: any = null;
     if (runStatus === 'capturing' && currentRunId) {
+      loadGallery(currentRunId);
       interval = setInterval(() => {
         loadGallery(currentRunId);
       }, 2500);

@@ -224,8 +224,7 @@ export const StudioGallery: React.FC<StudioGalleryProps> = ({
 
   // Wheel zoom handler
   const handleWheel = (e: React.WheelEvent) => {
-    if (e.ctrlKey || e.metaKey) {
-      e.preventDefault();
+    if (e.ctrlKey || e.metaKey || isFitMode) {
       if (e.deltaY < 0) {
         setZoomLevel((z) => Math.min(4.0, +(z + 0.15).toFixed(2)));
       } else {
@@ -803,9 +802,21 @@ export const StudioGallery: React.FC<StudioGalleryProps> = ({
                 <img
                   src={currentLightboxItem.url}
                   alt={currentLightboxItem.title}
-                  className={`rounded-lg shadow-2xl transition duration-150 ${
+                  onClick={() => {
+                    if (zoomLevel === 1.0 && isFitMode) {
+                      setZoomLevel(1.5);
+                      setIsFitMode(false);
+                    } else {
+                      setZoomLevel(1.0);
+                      setIsFitMode(true);
+                    }
+                  }}
+                  className={`rounded-lg shadow-2xl transition duration-150 cursor-pointer ${
+                    zoomLevel > 1.0 ? 'cursor-zoom-out' : 'cursor-zoom-in'
+                  } ${
                     isFitMode ? 'max-h-[78vh] max-w-full object-contain' : 'w-full max-w-5xl h-auto'
                   }`}
+                  title={zoomLevel > 1.0 ? 'Click to reset zoom (100%)' : 'Click to zoom in'}
                 />
               </div>
             </div>
