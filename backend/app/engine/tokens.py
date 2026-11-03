@@ -1,7 +1,8 @@
 """
 Design Token Extractor
 Analyzes computed CSS properties across crawled pages to discover
-Color Palettes, Typography Scales, Border Radii, and Box Shadows.
+Color Palettes (with modern Color 4 oklch/lab normalization via canvas),
+Typography Scales (grouped by semantic hierarchy), Border Radii, and Box Shadows.
 """
 
 import re
@@ -16,7 +17,10 @@ RE_RGBA = re.compile(r'rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)')
 
 def rgba_to_hex(color_str: str) -> str:
     """Converts rgb(r, g, b) or rgba(r, g, b, a) to hex #RRGGBB."""
-    match = RE_RGBA.match(color_str.strip())
+    if not color_str:
+        return ""
+    stripped = color_str.strip()
+    match = RE_RGBA.match(stripped)
     if not match:
         return color_str
     r, g, b = int(match.group(1)), int(match.group(2)), int(match.group(3))
@@ -27,37 +31,87 @@ def rgba_to_hex(color_str: str) -> str:
 
 def extract_page_tokens(page: Page) -> Dict[str, Any]:
     """
-    Extracts raw computed style values from DOM elements.
+    Extracts raw computed style values, CSS variables, and typography from DOM elements.
+    Uses browser canvas to normalize modern Color Level 4 formats (oklch, lab, color(srgb ...)).
     """
     try:
         raw = page.evaluate("""
             () => {
-                const elements = document.querySelectorAll('h1, h2, h3, h4, p, a, button, input, div, section, header, footer');
-                const colors = [];
-                const bgColors = [];
-                const typography = [];
+                const canvas = document.createElement('canvas');
+                canvas.width = 1;
+                canvas.height = 1;
+                const ctx = canvas.getContext('2d');
+
+                function normalizeColor(rawColor) {
+                    if (!rawColor || rawColor === 'transparent' || rawColor === 'rgba(0, 0, 0, 0)') {
+                        return null;
+                    }
+                    try {
+                        ctx.fillStyle = rawColor;
+                        const computed = ctx.fillStyle;
+                        if (!computed) return null;
+                        if (computed.startsWith('#')) return computed.toUpperCase();
+
+                        const match = computed.match(/^rgba?\\((\\d+),\\s*(\\d+),\\s*(\\d+)(?:,\\s*([\\d.]+))?\\)$/);
+                        if (match) {
+                            const r = parseInt(match[1]);
+                            const g = parseInt(match[2]);
+                            const b = parseInt(match[3]);
+                            const a = match[4] !== undefined ? parseFloat(match[4]) : 1;
+                            if (a === 0) return null;
+                            const hex = '#' + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1).toUpperCase();
+                            return hex;
+                        }
+                    } catch (e) {}
+                    return null;
+                }
+
+                const colors = new Set();
+                const bgColors = new Set();
                 const radii = [];
                 const shadows = [];
+                const typeItems = [];
+
+                // 1. Inspect CSS Custom Properties on :root and body
+                const rootStyles = window.getComputedStyle(document.documentElement);
+                const bodyStyles = window.getComputedStyle(document.body);
+                [rootStyles, bodyStyles].forEach(styleObj => {
+                    for (let i = 0; i < styleObj.length; i++) {
+                        const prop = styleObj[i];
+                        if (prop.startsWith('--')) {
+                            const val = styleObj.getPropertyValue(prop).trim();
+                            const hex = normalizeColor(val);
+                            if (hex) {
+                                colors.add(hex);
+                            }
+                        }
+                    }
+                });
+
+                // 2. Sample elements across the DOM
+                const elements = document.querySelectorAll(
+                    'h1, h2, h3, h4, h5, h6, p, a, button, input, select, textarea, div, section, header, footer, [data-framer-name]'
+                );
 
                 elements.forEach(el => {
                     const style = window.getComputedStyle(el);
 
-                    // Colors
-                    if (style.color) colors.push(style.color);
-                    if (style.backgroundColor && style.backgroundColor !== 'rgba(0, 0, 0, 0)') {
-                        bgColors.push(style.backgroundColor);
+                    // Foreground Color
+                    if (style.color) {
+                        const hex = normalizeColor(style.color);
+                        if (hex) colors.add(hex);
                     }
 
-                    // Typography
-                    const tag = el.tagName.toLowerCase();
-                    if (['h1', 'h2', 'h3', 'h4', 'p', 'body'].includes(tag)) {
-                        typography.push({
-                            tag: tag,
-                            fontFamily: style.fontFamily.split(',')[0].replace(/['"]/g, '').trim(),
-                            fontSize: style.fontSize,
-                            fontWeight: style.fontWeight,
-                            lineHeight: style.lineHeight
-                        });
+                    // Background Color
+                    if (style.backgroundColor && style.backgroundColor !== 'rgba(0, 0, 0, 0)') {
+                        const hex = normalizeColor(style.backgroundColor);
+                        if (hex) bgColors.add(hex);
+                    }
+
+                    // Border Color
+                    if (style.borderColor && style.borderWidth !== '0px') {
+                        const hex = normalizeColor(style.borderColor);
+                        if (hex) colors.add(hex);
                     }
 
                     // Border Radii
@@ -69,9 +123,52 @@ def extract_page_tokens(page: Page) -> Dict[str, Any]:
                     if (style.boxShadow && style.boxShadow !== 'none') {
                         shadows.push(style.boxShadow);
                     }
+
+                    // Typography Extraction
+                    const tag = el.tagName.toLowerCase();
+                    const hasDirectText = Array.from(el.childNodes).some(
+                        node => node.nodeType === Node.TEXT_NODE && node.textContent.trim().length > 0
+                    );
+
+                    if (['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'a', 'button', 'body'].includes(tag) || hasDirectText) {
+                        const fontSizePx = parseFloat(style.fontSize) || 16;
+                        const fontFamily = style.fontFamily.split(',')[0].replace(/['"]/g, '').trim();
+
+                        // Infer semantic role from tag and size
+                        let semanticRole = 'Body';
+                        if (tag === 'h1' || fontSizePx >= 32) {
+                            semanticRole = 'Display / H1';
+                        } else if (tag === 'h2' || fontSizePx >= 24) {
+                            semanticRole = 'H2';
+                        } else if (tag === 'h3' || fontSizePx >= 20) {
+                            semanticRole = 'H3';
+                        } else if (tag === 'h4' || fontSizePx >= 18) {
+                            semanticRole = 'H4';
+                        } else if (tag === 'button' || el.getAttribute('role') === 'button') {
+                            semanticRole = 'Button / UI';
+                        } else if (fontSizePx <= 13) {
+                            semanticRole = 'Small / Caption';
+                        }
+
+                        typeItems.push({
+                            role: semanticRole,
+                            tag: tag,
+                            fontFamily: fontFamily,
+                            fontSize: style.fontSize,
+                            fontWeight: style.fontWeight,
+                            lineHeight: style.lineHeight,
+                            fontSizeNum: fontSizePx
+                        });
+                    }
                 });
 
-                return { colors, bgColors, typography, radii, shadows };
+                return {
+                    colors: Array.from(colors),
+                    bgColors: Array.from(bgColors),
+                    typography: typeItems,
+                    radii: radii,
+                    shadows: shadows
+                };
             }
         """)
         return raw
@@ -81,14 +178,14 @@ def extract_page_tokens(page: Page) -> Dict[str, Any]:
 
 def aggregate_and_store_tokens(run_id: str, raw_token_list: List[Dict[str, Any]]) -> Dict[str, Any]:
     """
-    Aggregates tokens across all pages, sorts by frequency, categorizes,
-    and stores them in the SQLite tokens table.
+    Aggregates tokens across pages, sorts by frequency, categorizes,
+    and stores them incrementally in the SQLite tokens table.
     """
     all_colors = []
     all_bg_colors = []
     all_radii = []
     all_shadows = []
-    type_by_tag: Dict[str, Dict[str, Any]] = {}
+    type_by_role: Dict[str, Dict[str, Any]] = {}
 
     for item in raw_token_list:
         all_colors.extend(item.get("colors", []))
@@ -97,11 +194,14 @@ def aggregate_and_store_tokens(run_id: str, raw_token_list: List[Dict[str, Any]]
         all_shadows.extend(item.get("shadows", []))
 
         for t in item.get("typography", []):
-            tag = t["tag"]
-            if tag not in type_by_tag:
-                type_by_tag[tag] = t
+            role = t.get("role") or t.get("tag")
+            if role not in type_by_role:
+                type_by_role[role] = t
+            elif t.get("fontSizeNum", 0) > type_by_role[role].get("fontSizeNum", 0):
+                # Keep the more prominent definition for display/headings
+                type_by_role[role] = t
 
-    # Aggregate Colors
+    # Aggregate Colors (Hex values already normalized via canvas)
     color_counter = Counter()
     for c in all_colors + all_bg_colors:
         hex_c = rgba_to_hex(c)
@@ -136,12 +236,20 @@ def aggregate_and_store_tokens(run_id: str, raw_token_list: List[Dict[str, Any]]
         """, (str(uuid.uuid4())[:8], run_id, c["category"], c["hex"], c["count"]))
 
     # Insert Typography
-    for tag, t in type_by_tag.items():
+    # Order roles logically: Display / H1, H2, H3, H4, Body, Small / Caption, Button / UI
+    ROLE_ORDER = ["Display / H1", "H2", "H3", "H4", "Body", "Small / Caption", "Button / UI"]
+    sorted_roles = sorted(
+        type_by_role.keys(),
+        key=lambda r: ROLE_ORDER.index(r) if r in ROLE_ORDER else 99
+    )
+
+    for role in sorted_roles:
+        t = type_by_role[role]
         val_str = f"{t['fontSize']} / {t['fontWeight']} ({t['fontFamily']})"
         cursor.execute("""
             INSERT INTO tokens (id, run_id, category, name, value, usage_count)
             VALUES (?, ?, 'typography', ?, ?, 1)
-        """, (str(uuid.uuid4())[:8], run_id, tag, val_str))
+        """, (str(uuid.uuid4())[:8], run_id, role, val_str))
 
     # Insert Radii
     for r in top_radii:
@@ -162,7 +270,7 @@ def aggregate_and_store_tokens(run_id: str, raw_token_list: List[Dict[str, Any]]
 
     return {
         "colors": top_colors,
-        "typography": type_by_tag,
+        "typography": type_by_role,
         "radii": top_radii,
         "shadows": top_shadows
     }

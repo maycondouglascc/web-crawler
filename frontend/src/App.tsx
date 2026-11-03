@@ -117,6 +117,9 @@ export function App() {
             loadGallery(runId);
           }
         }
+        if (data.asset_updated) {
+          loadGallery(runId);
+        }
       } catch (e) {
         console.error('WS parse error:', e);
       }
@@ -124,6 +127,19 @@ export function App() {
 
     wsRef.current = ws;
   };
+
+  // Lightweight 2.5s fallback polling during active capture
+  useEffect(() => {
+    let interval: any = null;
+    if (runStatus === 'capturing' && currentRunId) {
+      interval = setInterval(() => {
+        loadGallery(currentRunId);
+      }, 2500);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [runStatus, currentRunId]);
 
   const loadDiscoveredRoutes = async (runId: string) => {
     try {
@@ -193,12 +209,34 @@ export function App() {
         body: JSON.stringify({
           viewports: config.viewports,
           themes: config.themes,
+          include_fold: config.include_fold ?? false,
         }),
       });
 
       if (!res.ok) throw new Error('Capture failed to start');
     } catch (e: any) {
       alert(`Failed to launch capture: ${e.message}`);
+    }
+  };
+
+  const handleRecaptureRoutes = async (routePaths: string[]) => {
+    if (!currentRunId || routePaths.length === 0) return;
+    try {
+      setRunStatus('capturing');
+      setProgressText(`Recapturing ${routePaths.length} route(s)...`);
+      setProgressPercent(10);
+
+      const res = await fetch(`/api/runs/${currentRunId}/recapture`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          route_paths: routePaths,
+        }),
+      });
+
+      if (!res.ok) throw new Error('Recapture failed to start');
+    } catch (e: any) {
+      alert(`Failed to launch recapture: ${e.message}`);
     }
   };
 
@@ -263,8 +301,8 @@ export function App() {
 
       {/* Main Container */}
       <main className="flex-1 max-w-6xl w-full mx-auto px-6 py-8 space-y-8">
-        {/* Launcher Card (Hidden if Gallery is ready, or collapsible) */}
-        {runStatus !== 'completed' && (
+        {/* Launcher Card (Hidden while Capturing or when Gallery is ready) */}
+        {runStatus !== 'completed' && runStatus !== 'capturing' && (
           <div className="p-6 md:p-8 rounded-3xl bg-gradient-to-b from-slate-900/90 to-slate-950/60 border border-slate-800/80 shadow-2xl space-y-6">
             <div className="max-w-2xl">
               <h1 className="text-2xl md:text-3xl font-extrabold text-white tracking-tight">
@@ -345,8 +383,8 @@ export function App() {
           />
         )}
 
-        {/* Completed Gallery View */}
-        {runStatus === 'completed' && (
+        {/* Gallery View (Live Streaming during capture & final inspection) */}
+        {(runStatus === 'capturing' || runStatus === 'completed') && (
           <StudioGallery
             runId={currentRunId || ''}
             screens={galleryScreens}
@@ -355,6 +393,8 @@ export function App() {
             components={galleryComponents}
             tokens={galleryTokens}
             onReset={handleResetRun}
+            onRecapture={handleRecaptureRoutes}
+            isLiveCapturing={runStatus === 'capturing'}
           />
         )}
       </main>

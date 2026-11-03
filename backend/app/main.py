@@ -9,6 +9,7 @@ import os
 import uuid
 import json
 import asyncio
+import time
 from typing import Dict, Any, List, Optional
 from datetime import datetime
 from pydantic import BaseModel
@@ -26,7 +27,7 @@ from app.engine.auth_vault import (
     delete_profile
 )
 from app.engine.discoverer import discover_site_routes
-from app.engine.capturer import run_capture_pipeline, PROJECTS_BASE_DIR
+from app.engine.capturer import run_capture_pipeline, recapture_routes_pipeline, PROJECTS_BASE_DIR
 
 # Ensure database tables exist
 init_db()
@@ -58,7 +59,7 @@ app.add_middleware(
 
 active_websockets: Dict[str, List[WebSocket]] = {}
 
-def update_progress(run_id: str, text: str, percent: int, status: str = None):
+def update_progress(run_id: str, text: str, percent: int, status: str = None, asset_updated: bool = False):
     conn = get_connection()
     cursor = conn.cursor()
     if status:
@@ -72,7 +73,7 @@ def update_progress(run_id: str, text: str, percent: int, status: str = None):
 
     if main_event_loop and main_event_loop.is_running() and run_id in active_websockets:
         async def _send():
-            payload = {"run_id": run_id, "text": text, "percent": percent, "status": status}
+            payload = {"run_id": run_id, "text": text, "percent": percent, "status": status, "asset_updated": asset_updated}
             for ws in list(active_websockets.get(run_id, [])):
                 try:
                     await ws.send_json(payload)
@@ -105,6 +106,13 @@ class PatternToggleRequest(BaseModel):
 class CaptureStartRequest(BaseModel):
     viewports: Dict[str, bool]
     themes: Dict[str, bool]
+    include_fold: bool = False
+
+class RecaptureRequest(BaseModel):
+    route_paths: List[str]
+    viewports: Optional[Dict[str, bool]] = None
+    themes: Optional[Dict[str, bool]] = None
+    include_fold: Optional[bool] = None
 
 # --- API ROUTES ---
 
@@ -279,14 +287,15 @@ def start_capture_job(run_id: str, data: CaptureStartRequest, background_tasks: 
     conn.close()
 
     def run_worker():
-        def progress_cb(text, pct, status=None):
-            update_progress(run_id, text, pct, status)
+        def progress_cb(text, pct, status=None, asset_updated=False):
+            update_progress(run_id, text, pct, status, asset_updated)
 
         try:
             run_capture_pipeline(
                 run_id=run_id,
                 viewports=data.viewports,
                 themes=data.themes,
+                include_fold=data.include_fold,
                 progress_callback=progress_cb
             )
         except Exception as e:
@@ -296,10 +305,48 @@ def start_capture_job(run_id: str, data: CaptureStartRequest, background_tasks: 
     background_tasks.add_task(run_worker)
     return {"run_id": run_id, "status": "capturing"}
 
+@app.post("/api/runs/{run_id}/recapture")
+def recapture_routes(run_id: str, data: RecaptureRequest, background_tasks: BackgroundTasks):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM runs WHERE id = ?", (run_id,))
+    run = cursor.fetchone()
+    if not run:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Run not found")
+
+    cursor.execute("""
+        UPDATE runs SET status = 'capturing', progress_text = 'Initializing route recapture...', progress_percent = 5
+        WHERE id = ?
+    """, (run_id,))
+    conn.commit()
+    conn.close()
+
+    def run_recapture_worker():
+        def progress_cb(text, pct, status=None, asset_updated=False):
+            update_progress(run_id, text, pct, status, asset_updated)
+
+        try:
+            recapture_routes_pipeline(
+                run_id=run_id,
+                route_paths=data.route_paths,
+                viewports=data.viewports,
+                themes=data.themes,
+                include_fold=data.include_fold,
+                progress_callback=progress_cb
+            )
+        except Exception as e:
+            print(f"Recapture error: {e}")
+            update_progress(run_id, f"Recapture failed: {str(e)}", 100, status="failed")
+
+    background_tasks.add_task(run_recapture_worker)
+    return {"run_id": run_id, "status": "capturing", "route_paths": data.route_paths}
+
 # 5. Mobbin-Style Gallery Data
 def make_media_url(abs_path: str) -> str:
     rel = os.path.relpath(abs_path, PROJECTS_BASE_DIR)
-    return f"/media/projects/{rel}"
+    v = int(os.path.getmtime(abs_path)) if os.path.exists(abs_path) else int(time.time())
+    return f"/media/projects/{rel}?v={v}"
 
 @app.get("/api/runs/{run_id}/gallery")
 def get_gallery_assets(run_id: str):

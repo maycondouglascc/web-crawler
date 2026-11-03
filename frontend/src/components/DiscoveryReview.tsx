@@ -41,6 +41,7 @@ export const DiscoveryReview: React.FC<DiscoveryReviewProps> = ({
   const [includeMobile, setIncludeMobile] = useState(true);
   const [includeTablet, setIncludeTablet] = useState(false);
   const [includeUltrawide, setIncludeUltrawide] = useState(false);
+  const [includeFold, setIncludeFold] = useState(false);
 
   const toggleExpand = (pattern: string) => {
     setExpandedPatterns((prev) => ({ ...prev, [pattern]: !prev[pattern] }));
@@ -62,6 +63,7 @@ export const DiscoveryReview: React.FC<DiscoveryReviewProps> = ({
         light: includeLight,
         dark: includeDark,
       },
+      include_fold: includeFold,
     });
   };
 
@@ -159,6 +161,26 @@ export const DiscoveryReview: React.FC<DiscoveryReviewProps> = ({
           >
             <Moon size={14} />
             Dark Mode
+          </button>
+        </div>
+
+        {/* Capture Scope (Full Page vs Fold) */}
+        <div className="flex items-center gap-2 border-l border-slate-800 pl-4">
+          <button
+            onClick={() => setIncludeFold(false)}
+            className={`px-3 py-1.5 rounded-lg text-xs font-medium border flex items-center gap-1.5 transition ${
+              !includeFold ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300 font-semibold' : 'bg-slate-950 border-slate-800 text-slate-500'
+            }`}
+          >
+            <span>Full Page Only (Default)</span>
+          </button>
+          <button
+            onClick={() => setIncludeFold(true)}
+            className={`px-3 py-1.5 rounded-lg text-xs font-medium border flex items-center gap-1.5 transition ${
+              includeFold ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300 font-semibold' : 'bg-slate-950 border-slate-800 text-slate-500'
+            }`}
+          >
+            <span>+ Fold Screen</span>
           </button>
         </div>
       </div>

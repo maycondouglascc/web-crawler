@@ -16,15 +16,18 @@ if [ ! -d "venv" ]; then
     ./venv/bin/pip install -r backend/requirements.txt
 fi
 
-# Check if frontend is built
-if [ ! -d "frontend/dist" ]; then
-    echo "Building frontend studio UI..."
-    cd frontend && npm install && npm run build && cd ..
+# Always build frontend studio UI to keep latest changes
+echo "Building frontend studio UI..."
+cd frontend
+if [ ! -d "node_modules" ]; then
+    npm install
 fi
+npm run build
+cd ..
 
 echo ""
 echo "🚀 Studio running locally at: http://localhost:8000"
 echo "👉 Press Ctrl+C to stop"
 echo ""
 
-PYTHONPATH=backend ./venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000
+PYTHONPATH=backend ./venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir backend

@@ -153,10 +153,35 @@ def run_smoke_test():
         assert len(exp_res.content) > 50, f"Export file {fname} is too small"
         print(f"✓ Verified export download: {fname} ({len(exp_res.content)} bytes)")
 
+    # 8. Test Route Recapture Pipeline
+    recap_res = requests.post(f"http://127.0.0.1:8010/api/runs/{run_id}/recapture", json={
+        "route_paths": ["/"],
+        "include_fold": False
+    })
+    assert recap_res.status_code == 200
+    print("✓ Triggered route recapture for '/'")
+
+    # Wait for recapture to finish
+    for _ in range(40):
+        status_res = requests.get(f"http://127.0.0.1:8010/api/runs/{run_id}").json()
+        if status_res["status"] == "completed":
+            break
+        time.sleep(0.5)
+
+    assert status_res["status"] == "completed", f"Recapture did not complete: {status_res}"
+    print("✓ Route recapture completed successfully")
+
+    # Verify recaptured gallery and cache-busting URLs
+    recap_gallery = requests.get(f"http://127.0.0.1:8010/api/runs/{run_id}/gallery").json()
+    assert len(recap_gallery["screens"]) >= 2
+    for s in recap_gallery["screens"]:
+        assert "?v=" in s["url"], f"Missing cache-busting timestamp in {s['url']}"
+    print("✓ Verified cache-busting parameter '?v=' on recaptured screen URLs")
+
     # Clean shutdown
     server.shutdown()
     uvicorn_server.should_exit = True
-    print("\n🎉 ALL MILESTONES 1, 2, AND 3 E2E SMOKE TESTS PASSED!")
+    print("\n🎉 ALL MILESTONES 1, 2, 3 AND POST-MILESTONE 3 E2E SMOKE TESTS PASSED!")
 
 if __name__ == "__main__":
     run_smoke_test()
