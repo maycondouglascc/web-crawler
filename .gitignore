@@ -26,9 +26,8 @@ discovered_pages.txt
 grouped_sitemap.txt
 url.txt
 urls.txt
-*.sqlite
-*.sqlite3
-*.db
+*.sqlite*
+*.db*
 
 # OS / Editor
 .DS_Store

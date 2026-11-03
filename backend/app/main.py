@@ -1,7 +1,8 @@
 """
 FastAPI Backend API for Visual Intelligence Studio
 Provides REST endpoints and WebSockets for project management,
-authenticated session vault, smart route discovery, and capture orchestration.
+authenticated session vault, smart route discovery, capture orchestration,
+and Design System / AI Context Pack exports.
 """
 
 import os
@@ -14,6 +15,7 @@ from pydantic import BaseModel
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, BackgroundTasks
+from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
@@ -54,14 +56,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Active WebSocket connections per run_id
 active_websockets: Dict[str, List[WebSocket]] = {}
 
 def update_progress(run_id: str, text: str, percent: int, status: str = None):
-    """
-    Thread-safe progress updater.
-    Immediately updates SQLite and schedules WebSocket broadcast on main loop.
-    """
     conn = get_connection()
     cursor = conn.cursor()
     if status:
@@ -301,7 +298,6 @@ def start_capture_job(run_id: str, data: CaptureStartRequest, background_tasks: 
 
 # 5. Mobbin-Style Gallery Data
 def make_media_url(abs_path: str) -> str:
-    """Converts absolute file path into static web URL."""
     rel = os.path.relpath(abs_path, PROJECTS_BASE_DIR)
     return f"/media/projects/{rel}"
 
@@ -330,6 +326,16 @@ def get_gallery_assets(run_id: str):
     for sec in sections:
         sec["url"] = make_media_url(sec["file_path"])
 
+    # Modals / interactive states
+    cursor.execute("""
+        SELECT * FROM captures
+        WHERE run_id = ? AND capture_type = 'modal'
+        ORDER BY route_path
+    """, (run_id,))
+    modals = [dict(r) for r in cursor.fetchall()]
+    for m in modals:
+        m["url"] = make_media_url(m["file_path"])
+
     # Harvested components
     cursor.execute("""
         SELECT * FROM components
@@ -344,16 +350,40 @@ def get_gallery_assets(run_id: str):
         if c.get("routes_json"):
             c["routes"] = json.loads(c["routes_json"])
 
+    # Extracted tokens
+    cursor.execute("SELECT * FROM tokens WHERE run_id = ? ORDER BY category, usage_count DESC", (run_id,))
+    tokens = [dict(r) for r in cursor.fetchall()]
+
     conn.close()
 
     return {
         "run_id": run_id,
         "screens": screens,
         "sections": sections,
+        "modals": modals,
         "components": components,
+        "tokens": tokens,
     }
 
-# 6. WebSockets for Live Progress
+# 6. Exporter File Downloads
+@app.get("/api/runs/{run_id}/exports/{file_name}")
+def download_export_file(run_id: str, file_name: str):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT project_id FROM runs WHERE id = ?", (run_id,))
+    run = cursor.fetchone()
+    conn.close()
+
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+
+    file_path = os.path.join(PROJECTS_BASE_DIR, run["project_id"], "runs", run_id, "exports", file_name)
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail=f"File {file_name} not found")
+
+    return FileResponse(file_path, filename=file_name)
+
+# 7. WebSockets for Live Progress
 @app.websocket("/ws/runs/{run_id}")
 async def websocket_run_progress(websocket: WebSocket, run_id: str):
     await websocket.accept()
@@ -367,10 +397,10 @@ async def websocket_run_progress(websocket: WebSocket, run_id: str):
         if run_id in active_websockets and websocket in active_websockets[run_id]:
             active_websockets[run_id].remove(websocket)
 
-# 7. Mount Media Directory
+# 8. Mount Media Directory
 app.mount("/media/projects", StaticFiles(directory=PROJECTS_BASE_DIR), name="projects_media")
 
-# 8. Serve Frontend Dist if available
+# 9. Serve Frontend Dist if available
 frontend_dist = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "frontend", "dist")
 if os.path.exists(frontend_dist):
     app.mount("/", StaticFiles(directory=frontend_dist, html=True), name="static")

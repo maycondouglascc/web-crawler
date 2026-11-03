@@ -1,7 +1,8 @@
 """
 Multi-Viewport & Multi-Theme Lossless Capture Pipeline
 Orchestrates parallel Playwright workers to capture full-page and above-the-fold screens,
-invoke semantic section slicing, and harvest deduplicated UI components.
+invoke semantic section slicing, harvest deduplicated UI components,
+explore interactive modals/drawers, and generate Design System & AI Context packs.
 """
 
 import os
@@ -16,6 +17,11 @@ from app.database import get_connection
 from app.engine.auth_vault import apply_safe_crawl_guardrails
 from app.engine.sanitizer import sanitize_page_for_capture
 from app.engine.slicer import slice_page_sections, harvest_page_components
+from app.engine.interactions import explore_interactive_triggers
+from app.engine.tokens import extract_page_tokens, aggregate_and_store_tokens
+from app.exporters.design_system import generate_design_system_files
+from app.exporters.context_pack import generate_context_pack
+from app.exporters.html_viewer import generate_portable_html_viewer
 
 VIEWPORT_SPECS = {
     "desktop": {"width": 1440, "height": 900},
@@ -33,7 +39,7 @@ def run_capture_pipeline(
     progress_callback = None
 ):
     """
-    Executes the complete capture pipeline for all selected routes in run_id.
+    Executes the complete capture and visual intelligence pipeline.
     """
     conn = get_connection()
     cursor = conn.cursor()
@@ -52,6 +58,7 @@ def run_capture_pipeline(
         raise ValueError(f"Run {run_id} not found")
 
     project_id = run_info["project_id"]
+    base_url = run_info["base_url"]
     auth_profile_id = run_info["auth_profile_id"]
 
     # Get auth storage state path if any
@@ -87,6 +94,7 @@ def run_capture_pipeline(
 
     total_tasks = len(selected_routes) * len(active_viewports) * len(active_themes)
     current_task = 0
+    collected_tokens = []
 
     if progress_callback:
         progress_callback(f"Starting capture pipeline ({total_tasks} render variants)...", 5)
@@ -104,7 +112,7 @@ def run_capture_pipeline(
 
                 for theme_name in active_themes:
                     current_task += 1
-                    pct = int(5 + (current_task / total_tasks) * 90)
+                    pct = int(5 + (current_task / (total_tasks + 2)) * 80)
 
                     if progress_callback:
                         progress_callback(
@@ -154,10 +162,12 @@ def run_capture_pipeline(
                         conn.commit()
                         conn.close()
 
-                        # 4. On Desktop Light, slice semantic sections and harvest components
+                        # 4. On Desktop Light: Slice sections, harvest components, tokens, and modals
                         if vp_name == "desktop" and theme_name == active_themes[0]:
                             slice_page_sections(page, run_id, route_path, vp_name, theme_name, run_dir)
                             harvest_page_components(page, run_id, route_path, vp_name, theme_name, run_dir)
+                            collected_tokens.append(extract_page_tokens(page))
+                            explore_interactive_triggers(page, run_id, route_path, run_dir)
 
                     except Exception as e:
                         print(f"Error capturing {full_url} ({vp_name}/{theme_name}): {e}")
@@ -166,16 +176,40 @@ def run_capture_pipeline(
 
         browser.close()
 
-    # Update run status to completed
+    # Post-Processing: Tokens & Exporters
+    if progress_callback:
+        progress_callback("Extracting design tokens and generating AI Context Pack...", 90)
+
+    tokens = aggregate_and_store_tokens(run_id, collected_tokens)
+    generate_design_system_files(run_id, tokens, run_dir)
+
+    # Fetch captured items for context pack & html viewer
     conn = get_connection()
     cursor = conn.cursor()
+    cursor.execute("SELECT * FROM routes WHERE run_id = ?", (run_id,))
+    all_routes = [dict(r) for r in cursor.fetchall()]
+
+    cursor.execute("SELECT * FROM captures WHERE run_id = ? AND capture_type = 'section'", (run_id,))
+    all_sections = [dict(r) for r in cursor.fetchall()]
+
+    cursor.execute("SELECT * FROM captures WHERE run_id = ? AND capture_type IN ('full_page', 'fold')", (run_id,))
+    all_screens = [dict(r) for r in cursor.fetchall()]
+
+    cursor.execute("SELECT * FROM components WHERE run_id = ?", (run_id,))
+    all_components = [dict(r) for r in cursor.fetchall()]
+
+    # Generate CONTEXT.md & gallery.html
+    generate_context_pack(run_id, base_url, all_routes, all_sections, all_components, tokens, run_dir)
+    generate_portable_html_viewer(run_id, all_screens, all_sections, all_components, run_dir)
+
+    # Update run status to completed
     cursor.execute("""
         UPDATE runs
-        SET status = 'completed', progress_text = 'Capture pipeline complete! Browse your visual gallery.', progress_percent = 100, completed_at = datetime('now')
+        SET status = 'completed', progress_text = 'Visual intelligence suite complete! Gallery & Context ready.', progress_percent = 100, completed_at = datetime('now')
         WHERE id = ?
     """, (run_id,))
     conn.commit()
     conn.close()
 
     if progress_callback:
-        progress_callback("All screenshots, sections, and UI components captured!", 100, status="completed")
+        progress_callback("Capture complete! Design System, AI Context & Gallery ready.", 100, status="completed")

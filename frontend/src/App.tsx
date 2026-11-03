@@ -30,7 +30,9 @@ export function App() {
   // Gallery Assets
   const [galleryScreens, setGalleryScreens] = useState<any[]>([]);
   const [gallerySections, setGallerySections] = useState<any[]>([]);
+  const [galleryModals, setGalleryModals] = useState<any[]>([]);
   const [galleryComponents, setGalleryComponents] = useState<any[]>([]);
+  const [galleryTokens, setGalleryTokens] = useState<any[]>([]);
 
   const wsRef = useRef<WebSocket | null>(null);
 
@@ -142,7 +144,9 @@ export function App() {
         const data = await res.json();
         setGalleryScreens(data.screens || []);
         setGallerySections(data.sections || []);
+        setGalleryModals(data.modals || []);
         setGalleryComponents(data.components || []);
+        setGalleryTokens(data.tokens || []);
       }
     } catch (e) {
       console.error('Failed to load gallery:', e);
@@ -204,7 +208,9 @@ export function App() {
     setPatterns([]);
     setGalleryScreens([]);
     setGallerySections([]);
+    setGalleryModals([]);
     setGalleryComponents([]);
+    setGalleryTokens([]);
   };
 
   return (
@@ -342,9 +348,12 @@ export function App() {
         {/* Completed Gallery View */}
         {runStatus === 'completed' && (
           <StudioGallery
+            runId={currentRunId || ''}
             screens={galleryScreens}
             sections={gallerySections}
+            modals={galleryModals}
             components={galleryComponents}
+            tokens={galleryTokens}
             onReset={handleResetRun}
           />
         )}
