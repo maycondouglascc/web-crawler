@@ -127,9 +127,54 @@ def list_projects():
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM projects ORDER BY created_at DESC")
-    rows = cursor.fetchall()
+    projects = []
+    for row in cursor.fetchall():
+        project = dict(row)
+        cursor.execute(
+            """
+            SELECT id, status, progress_text, progress_percent, created_at, completed_at
+            FROM runs
+            WHERE project_id = ?
+            ORDER BY created_at DESC
+            LIMIT 1
+            """,
+            (project["id"],),
+        )
+        run = cursor.fetchone()
+        if run:
+            run_dict = dict(run)
+            rid = run_dict["id"]
+            cursor.execute("SELECT COUNT(*) as c FROM captures WHERE run_id = ? AND capture_type IN ('full_page', 'fold')", (rid,))
+            run_dict["screens_count"] = cursor.fetchone()["c"]
+            cursor.execute("SELECT COUNT(*) as c FROM captures WHERE run_id = ? AND capture_type = 'section'", (rid,))
+            run_dict["sections_count"] = cursor.fetchone()["c"]
+            cursor.execute("SELECT COUNT(*) as c FROM components WHERE run_id = ?", (rid,))
+            run_dict["components_count"] = cursor.fetchone()["c"]
+            cursor.execute("SELECT COUNT(*) as c FROM tokens WHERE run_id = ?", (rid,))
+            run_dict["tokens_count"] = cursor.fetchone()["c"]
+            cursor.execute("SELECT COUNT(*) as c FROM routes WHERE run_id = ?", (rid,))
+            run_dict["routes_count"] = cursor.fetchone()["c"]
+            project["latest_run"] = run_dict
+
+            cursor.execute(
+                """
+                SELECT file_path FROM captures
+                WHERE run_id = ? AND capture_type IN ('full_page', 'fold') AND file_path != ''
+                ORDER BY CASE WHEN route_path = '/' THEN 0 ELSE 1 END,
+                         CASE WHEN viewport_label = 'desktop' THEN 0 ELSE 1 END,
+                         created_at ASC
+                LIMIT 1
+                """,
+                (rid,),
+            )
+            capture = cursor.fetchone()
+            project["preview_url"] = make_media_url(capture["file_path"]) if (capture and capture["file_path"]) else None
+        else:
+            project["latest_run"] = None
+            project["preview_url"] = None
+        projects.append(project)
     conn.close()
-    return [dict(r) for r in rows]
+    return projects
 
 @app.get("/api/crawls")
 def list_crawls():

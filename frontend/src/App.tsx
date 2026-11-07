@@ -1,8 +1,18 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { AuthVaultModal } from './components/AuthVaultModal';
-import { DiscoveryReview } from './components/DiscoveryReview';
-import { LiveCrawlProgress } from './components/LiveCrawlProgress';
-import { StudioGallery } from './components/StudioGallery';
+import React, { useEffect, useRef, useState } from "react";
+import { KeyRound } from "lucide-react";
+import { AuthVaultModal } from "./components/AuthVaultModal";
+import { DesignDocs, readDocsStory } from "./components/docs/DesignDocs";
+import { DiscoveryReview } from "./components/DiscoveryReview";
+import { ExportDrawer } from "./components/ExportDrawer";
+import { LiveCrawlProgress } from "./components/LiveCrawlProgress";
+import { StudioGallery } from "./components/StudioGallery";
+import { Button } from "./components/ui/Button";
+import { Chip } from "./components/ui/Chip";
+import { FigmaIcon } from "./components/ui/icons";
+import { IconButton } from "./components/ui/IconButton";
+import { MediaCard } from "./components/ui/MediaCard";
+import { SearchField } from "./components/ui/SearchField";
+import { TextField } from "./components/ui/TextField";
 
 interface AuthProfile {
   id: string;
@@ -11,164 +21,129 @@ interface AuthProfile {
   cookie_count: number;
 }
 
-interface CrawlSummary {
-  run_id: string;
-  project_id: string;
-  site_name: string;
-  base_url: string;
+interface LatestRun {
+  id: string;
   status: string;
-  progress_text?: string;
-  progress_percent?: number;
+  progress_text: string | null;
+  progress_percent: number;
   created_at: string;
-  screens_count: number;
-  sections_count: number;
-  components_count: number;
-  tokens_count: number;
-  routes_count: number;
+  completed_at: string | null;
+  screens_count?: number;
+  sections_count?: number;
+  components_count?: number;
+  tokens_count?: number;
+  routes_count?: number;
+}
+
+interface Project {
+  id: string;
+  name: string;
+  base_url: string;
+  auth_profile_id: string | null;
+  created_at: string;
+  latest_run: LatestRun | null;
   preview_url: string | null;
 }
 
+type View = "compose" | "library" | "site";
+
+function normalizeUrlInput(raw: string): string {
+  const trimmed = raw.trim();
+  if (!trimmed) return "";
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  if (trimmed.startsWith("localhost") || trimmed.startsWith("127.0.0.1")) {
+    return `http://${trimmed}`;
+  }
+  return `https://${trimmed}`;
+}
+
 export function App() {
-  const [targetUrl, setTargetUrl] = useState('');
-  const [selectedProfileId, setSelectedProfileId] = useState<string>('');
+  const [targetUrl, setTargetUrl] = useState("");
+  const [selectedProfileId, setSelectedProfileId] = useState("");
   const [profiles, setProfiles] = useState<AuthProfile[]>([]);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [projectsLoaded, setProjectsLoaded] = useState(false);
+  const [search, setSearch] = useState("");
+  const [view, setView] = useState<View>("compose");
+  const [activeProject, setActiveProject] = useState<Project | null>(null);
 
-  // Home view mode: 'new_crawl' (Wireframe - 1) or 'my_crawls' (Wireframe - 4)
-  const [homeMode, setHomeMode] = useState<'new_crawl' | 'my_crawls'>('new_crawl');
-  const [crawls, setCrawls] = useState<CrawlSummary[]>([]);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [hasLoadedInitialCrawls, setHasLoadedInitialCrawls] = useState(false);
-
-  // Active Run State
   const [currentRunId, setCurrentRunId] = useState<string | null>(null);
-  const [currentSiteName, setCurrentSiteName] = useState<string>('');
-  const [currentBaseUrl, setCurrentBaseUrl] = useState<string>('');
-  const [runStatus, setRunStatus] = useState<any>(null);
-  const [progressText, setProgressText] = useState('');
+  const [runStatus, setRunStatus] = useState<string | null>(null);
+  const [progressText, setProgressText] = useState("");
   const [progressPercent, setProgressPercent] = useState(0);
-
-  // Discovered Patterns
   const [patterns, setPatterns] = useState<any[]>([]);
-
-  // Gallery Assets
   const [galleryScreens, setGalleryScreens] = useState<any[]>([]);
   const [gallerySections, setGallerySections] = useState<any[]>([]);
   const [galleryModals, setGalleryModals] = useState<any[]>([]);
   const [galleryComponents, setGalleryComponents] = useState<any[]>([]);
   const [galleryTokens, setGalleryTokens] = useState<any[]>([]);
+  const [recaptureRequestId, setRecaptureRequestId] = useState(0);
+  const [isExportOpen, setIsExportOpen] = useState(false);
+  const [docsStory, setDocsStory] = useState<string | null>(() => readDocsStory());
 
   const wsRef = useRef<WebSocket | null>(null);
 
   const fetchProfiles = async () => {
     try {
-      const res = await fetch('/api/auth/profiles');
-      if (res.ok) {
-        const data = await res.json();
-        setProfiles(data);
-      }
-    } catch (e) {
-      console.error(e);
+      const res = await fetch("/api/auth/profiles");
+      if (res.ok) setProfiles(await res.json());
+    } catch (error) {
+      console.error(error);
     }
   };
 
-  const fetchCrawls = async () => {
+  const fetchProjects = async () => {
     try {
-      const res = await fetch('/api/crawls');
-      if (res.ok) {
-        const data: CrawlSummary[] = await res.json();
-        setCrawls(data);
-        if (!hasLoadedInitialCrawls) {
-          setHasLoadedInitialCrawls(true);
-          if (data.length > 0) {
-            setHomeMode('my_crawls');
-          } else {
-            setHomeMode('new_crawl');
-          }
-        }
-      }
-    } catch (e) {
-      console.error(e);
+      const res = await fetch("/api/projects");
+      if (!res.ok) return [] as Project[];
+      const data: Project[] = await res.json();
+      setProjects(data);
+      return data;
+    } catch (error) {
+      console.error(error);
+      return [] as Project[];
     }
   };
 
   useEffect(() => {
-    fetchProfiles();
-    fetchCrawls();
+    const syncDocs = () => setDocsStory(readDocsStory());
+    window.addEventListener("hashchange", syncDocs);
+    return () => window.removeEventListener("hashchange", syncDocs);
   }, []);
 
-  const normalizeUrlInput = (raw: string): string => {
-    const trimmed = raw.trim();
-    if (!trimmed) return '';
-    if (/^https?:\/\//i.test(trimmed)) return trimmed;
-    if (trimmed.startsWith('localhost') || trimmed.startsWith('127.0.0.1')) {
-      return `http://${trimmed}`;
-    }
-    return `https://${trimmed}`;
-  };
+  useEffect(() => {
+    let active = true;
+    const load = async () => {
+      await fetchProfiles();
+      const data = await fetchProjects();
+      if (!active) return;
+      setView(data.length === 0 ? "compose" : "library");
+      setProjectsLoaded(true);
+    };
+    load();
+    return () => {
+      active = false;
+    };
+  }, []);
 
-  const handleStartDiscovery = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    const formattedUrl = normalizeUrlInput(targetUrl);
-    if (!formattedUrl) return;
-
-    try {
-      setGalleryScreens([]);
-      setGallerySections([]);
-      setGalleryModals([]);
-      setGalleryComponents([]);
-      setGalleryTokens([]);
-      setPatterns([]);
-
-      let hostname = 'Site';
-      try {
-        hostname = new URL(formattedUrl).hostname || 'Local Project';
-      } catch {
-        hostname = formattedUrl;
-      }
-
-      const projRes = await fetch('/api/projects', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: hostname,
-          base_url: formattedUrl,
-          auth_profile_id: selectedProfileId || null,
-        }),
-      });
-
-      if (!projRes.ok) throw new Error('Failed to create project');
-      const project = await projRes.json();
-
-      const discRes = await fetch(`/api/projects/${project.id}/discover`, {
-        method: 'POST',
-      });
-
-      if (!discRes.ok) throw new Error('Failed to start discovery');
-      const discData = await discRes.json();
-
-      setCurrentSiteName(project.name);
-      setCurrentBaseUrl(project.base_url);
-      setCurrentRunId(discData.run_id);
-      setRunStatus('discovering');
-      setProgressText('Initializing crawler browser...');
-      setProgressPercent(5);
-
-      setupWebSocket(discData.run_id);
-    } catch (err: any) {
-      alert(`Error starting discovery: ${err.message}`);
-    }
+  const clearRunView = () => {
+    setCurrentRunId(null);
+    setRunStatus(null);
+    setProgressText("");
+    setProgressPercent(0);
+    setPatterns([]);
+    setGalleryScreens([]);
+    setGallerySections([]);
+    setGalleryModals([]);
+    setGalleryComponents([]);
+    setGalleryTokens([]);
   };
 
   const setupWebSocket = (runId: string) => {
-    if (wsRef.current) {
-      wsRef.current.close();
-    }
-
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}/ws/runs/${runId}`;
-    const ws = new WebSocket(wsUrl);
-
+    if (wsRef.current) wsRef.current.close();
+    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+    const ws = new WebSocket(`${protocol}//${window.location.host}/ws/runs/${runId}`);
     ws.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
@@ -176,34 +151,28 @@ export function App() {
         if (data.percent !== undefined) setProgressPercent(data.percent);
         if (data.status) {
           setRunStatus(data.status);
-          if (data.status === 'review_pending') {
-            loadDiscoveredRoutes(runId);
-          } else if (data.status === 'completed') {
+          if (data.status === "review_pending") loadDiscoveredRoutes(runId);
+          if (data.status === "completed") {
             loadGallery(runId);
-            fetchCrawls();
+            fetchProjects();
           }
         }
-        if (data.asset_updated) {
-          loadGallery(runId);
-        }
-      } catch (e) {
-        console.error('WS parse error:', e);
+        if (data.asset_updated) loadGallery(runId);
+      } catch (error) {
+        console.error("WS parse error:", error);
       }
     };
-
     wsRef.current = ws;
   };
 
   useEffect(() => {
-    let interval: any = null;
-    if (runStatus === 'capturing' && currentRunId) {
+    let interval: number | null = null;
+    if (runStatus === "capturing" && currentRunId) {
       loadGallery(currentRunId);
-      interval = setInterval(() => {
-        loadGallery(currentRunId);
-      }, 2500);
+      interval = window.setInterval(() => loadGallery(currentRunId), 2500);
     }
     return () => {
-      if (interval) clearInterval(interval);
+      if (interval) window.clearInterval(interval);
     };
   }, [runStatus, currentRunId]);
 
@@ -214,8 +183,8 @@ export function App() {
         const data = await res.json();
         setPatterns(data.patterns);
       }
-    } catch (e) {
-      console.error('Failed to load routes:', e);
+    } catch (error) {
+      console.error("Failed to load routes:", error);
     }
   };
 
@@ -224,396 +193,272 @@ export function App() {
       const res = await fetch(`/api/runs/${runId}/gallery`);
       if (res.ok) {
         const data = await res.json();
-        if (data.project) {
-          setCurrentSiteName(data.project.site_name || 'Site name');
-          setCurrentBaseUrl(data.project.base_url || '');
-        }
         setGalleryScreens(data.screens || []);
         setGallerySections(data.sections || []);
         setGalleryModals(data.modals || []);
         setGalleryComponents(data.components || []);
         setGalleryTokens(data.tokens || []);
       }
-    } catch (e) {
-      console.error('Failed to load gallery:', e);
+    } catch (error) {
+      console.error("Failed to load gallery:", error);
     }
   };
 
-  const handleOpenExistingCrawl = async (crawl: CrawlSummary) => {
-    setCurrentRunId(crawl.run_id);
-    setCurrentSiteName(crawl.site_name);
-    setCurrentBaseUrl(crawl.base_url);
-
-    if (crawl.status === 'review_pending') {
-      setRunStatus('review_pending');
-      await loadDiscoveredRoutes(crawl.run_id);
-    } else if (crawl.status === 'discovering') {
-      setRunStatus('discovering');
-      setProgressText(crawl.progress_text || 'Discovering routes...');
-      setProgressPercent(crawl.progress_percent || 20);
-      setupWebSocket(crawl.run_id);
-    } else if (crawl.status === 'capturing') {
-      setRunStatus('capturing');
-      setProgressText(crawl.progress_text || 'Capturing screens...');
-      setProgressPercent(crawl.progress_percent || 50);
-      await loadGallery(crawl.run_id);
-      setupWebSocket(crawl.run_id);
-    } else {
-      setRunStatus('completed');
-      await loadGallery(crawl.run_id);
+  const handleStartDiscovery = async () => {
+    const normalizedUrl = normalizeUrlInput(targetUrl);
+    if (!normalizedUrl) return;
+    try {
+      clearRunView();
+      const projectRes = await fetch("/api/projects", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: new URL(normalizedUrl).hostname || "Local Project",
+          base_url: normalizedUrl,
+          auth_profile_id: selectedProfileId || null,
+        }),
+      });
+      if (!projectRes.ok) throw new Error("Failed to create project");
+      const project = await projectRes.json();
+      const discoverRes = await fetch(`/api/projects/${project.id}/discover`, { method: "POST" });
+      if (!discoverRes.ok) throw new Error("Failed to start discovery");
+      const discoverData = await discoverRes.json();
+      const nextProject: Project = {
+        id: project.id,
+        name: project.name,
+        base_url: project.base_url,
+        auth_profile_id: project.auth_profile_id,
+        created_at: new Date().toISOString(),
+        latest_run: {
+          id: discoverData.run_id,
+          status: "discovering",
+          progress_text: "Initializing crawler browser...",
+          progress_percent: 5,
+          created_at: new Date().toISOString(),
+          completed_at: null,
+        },
+        preview_url: null,
+      };
+      setActiveProject(nextProject);
+      setView("site");
+      setCurrentRunId(discoverData.run_id);
+      setRunStatus("discovering");
+      setProgressText("Initializing crawler browser...");
+      setProgressPercent(5);
+      setupWebSocket(discoverData.run_id);
+      fetchProjects();
+    } catch (error: any) {
+      alert(`Error starting discovery: ${error.message}`);
     }
   };
 
   const handleToggleRoute = async (routeId: string, currentSelected: boolean) => {
     try {
-      await fetch('/api/routes/toggle', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      await fetch("/api/routes/toggle", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ route_id: routeId, is_selected: !currentSelected }),
       });
       if (currentRunId) loadDiscoveredRoutes(currentRunId);
-    } catch (e) {
-      console.error(e);
+    } catch (error) {
+      console.error(error);
     }
   };
 
   const handleTogglePattern = async (pattern: string, selectAll: boolean) => {
     if (!currentRunId) return;
     try {
-      await fetch('/api/routes/toggle-pattern', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      await fetch("/api/routes/toggle-pattern", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ run_id: currentRunId, pattern, is_selected: selectAll }),
       });
       loadDiscoveredRoutes(currentRunId);
-    } catch (e) {
-      console.error(e);
+    } catch (error) {
+      console.error(error);
     }
   };
 
   const handleProceedToCapture = async (config: any) => {
     if (!currentRunId) return;
     try {
-      setRunStatus('capturing');
-      setProgressText('Starting capture workers...');
+      setRunStatus("capturing");
+      setProgressText("Starting capture workers...");
       setProgressPercent(10);
-
       const res = await fetch(`/api/runs/${currentRunId}/capture`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           viewports: config.viewports,
           themes: config.themes,
           include_fold: config.include_fold ?? false,
         }),
       });
-
-      if (!res.ok) throw new Error('Capture failed to start');
-    } catch (e: any) {
-      alert(`Failed to launch capture: ${e.message}`);
+      if (!res.ok) throw new Error("Capture failed to start");
+    } catch (error: any) {
+      alert(`Failed to launch capture: ${error.message}`);
     }
   };
 
   const handleRecaptureRoutes = async (routePaths: string[]) => {
     if (!currentRunId || routePaths.length === 0) return;
     try {
-      setRunStatus('capturing');
+      setRunStatus("capturing");
       setProgressText(`Recapturing ${routePaths.length} route(s)...`);
       setProgressPercent(10);
-
       const res = await fetch(`/api/runs/${currentRunId}/recapture`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          route_paths: routePaths,
-        }),
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ route_paths: routePaths }),
       });
-
-      if (!res.ok) throw new Error('Recapture failed to start');
-    } catch (e: any) {
-      alert(`Failed to launch recapture: ${e.message}`);
+      if (!res.ok) throw new Error("Recapture failed to start");
+    } catch (error: any) {
+      alert(`Failed to launch recapture: ${error.message}`);
     }
   };
 
-  const handleBackToHome = () => {
-    if (wsRef.current) {
-      wsRef.current.close();
-    }
-    setCurrentRunId(null);
-    setRunStatus(null);
-    setPatterns([]);
-    setGalleryScreens([]);
-    setGallerySections([]);
-    setGalleryModals([]);
-    setGalleryComponents([]);
-    setGalleryTokens([]);
-    fetchCrawls();
+  const openProject = (project: Project) => {
+    clearRunView();
+    setActiveProject(project);
+    setView("site");
+    const run = project.latest_run;
+    if (!run) return;
+    setCurrentRunId(run.id);
+    setRunStatus(run.status);
+    setProgressText(run.progress_text || "");
+    setProgressPercent(run.progress_percent || 0);
+    setupWebSocket(run.id);
+    if (run.status === "review_pending") loadDiscoveredRoutes(run.id);
+    if (run.status === "capturing" || run.status === "completed" || run.status === "failed") loadGallery(run.id);
   };
 
-  const activeProfile = profiles.find((p) => p.id === selectedProfileId);
+  const goLibrary = () => {
+    if (wsRef.current) wsRef.current.close();
+    setActiveProject(null);
+    setView(projects.length === 0 ? "compose" : "library");
+    fetchProjects();
+  };
 
-  const filteredCrawls = crawls.filter((c) => {
-    if (!searchQuery.trim()) return true;
-    const q = searchQuery.toLowerCase();
-    return (
-      c.site_name.toLowerCase().includes(q) ||
-      c.base_url.toLowerCase().includes(q) ||
-      c.status.toLowerCase().includes(q)
-    );
+  const selectedProfile = profiles.find((profile) => profile.id === selectedProfileId);
+  const query = search.trim().toLowerCase();
+  const visibleProjects = projects.filter((project) => {
+    if (!query) return true;
+    return project.name.toLowerCase().includes(query) || project.base_url.toLowerCase().includes(query);
   });
 
+  const canExport = runStatus === "completed" && !!currentRunId;
+  const canRecapture = !!currentRunId && galleryScreens.length > 0 && (runStatus === "completed" || runStatus === "failed");
+
+  if (docsStory !== null) {
+    return <DesignDocs storyId={docsStory} />;
+  }
+
+  const siteSummaryParts: string[] = [];
+  if (activeProject?.base_url) siteSummaryParts.push(activeProject.base_url);
+  if (galleryScreens.length > 0) siteSummaryParts.push(`${galleryScreens.length} screens`);
+  if (galleryComponents.length > 0) siteSummaryParts.push(`${galleryComponents.length} components`);
+  if (galleryTokens.length > 0) siteSummaryParts.push(`${galleryTokens.length} tokens`);
+  const siteSummary = siteSummaryParts.join("  ") || "Summary about the site";
+
   return (
-    <div className="min-h-screen flex flex-col bg-[#131415] text-white font-sans">
-      {/* Minimal Uncluttered Top Bar (shown when on Home views so user can switch between Wireframe 1 & Wireframe 4 and manage Auth Sessions) */}
-      {!runStatus && (
-        <header className="w-full max-w-[1440px] mx-auto px-6 md:px-12 lg:px-[80px] pt-6 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setHomeMode('new_crawl')}
-              className={`px-4 py-2.5 rounded-[12px] text-[15px] leading-[22px] transition cursor-pointer ${
-                homeMode === 'new_crawl'
-                  ? 'bg-[#252627] text-white'
-                  : 'text-[#7E7E81] hover:text-white'
-              }`}
-            >
-              New crawl
-            </button>
-            <button
-              onClick={() => {
-                fetchCrawls();
-                setHomeMode('my_crawls');
-              }}
-              className={`px-4 py-2.5 rounded-[12px] text-[15px] leading-[22px] flex items-center gap-2 transition cursor-pointer ${
-                homeMode === 'my_crawls'
-                  ? 'bg-[#252627] text-white'
-                  : 'text-[#7E7E81] hover:text-white'
-              }`}
-            >
-              <span>My crawls</span>
-              {crawls.length > 0 && (
-                <span className="text-[13px] text-[#7E7E81]">{crawls.length}</span>
-              )}
-            </button>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => {
-                fetchProfiles();
-                setIsAuthModalOpen(true);
-              }}
-              className="px-4 py-2.5 rounded-[12px] border border-[#242628] hover:bg-[#242628]/60 text-[15px] leading-[22px] text-white flex items-center gap-2 transition cursor-pointer"
-            >
-              <span>{activeProfile ? `Session: ${activeProfile.name}` : 'Auth sessions'}</span>
-              {profiles.length > 0 && (
-                <span className="text-[13px] text-[#7E7E81]">({profiles.length})</span>
-              )}
-            </button>
-          </div>
-        </header>
-      )}
-
-      {/* WIREFRAME - 1: "Start your first crawl" (#29:2) */}
-      {!runStatus && homeMode === 'new_crawl' && (
-        <main className="flex-1 flex flex-col items-center justify-center px-6 md:px-12 lg:px-[80px] pb-16">
-          <div className="w-full max-w-[800px] flex flex-col items-center gap-[24px]">
-            <h1 className="text-[32px] leading-[40px] font-semibold text-white tracking-tight text-center">
-              Start your first crawl
-            </h1>
-
-            <form
-              onSubmit={handleStartDiscovery}
-              className="w-full flex flex-col sm:flex-row items-stretch sm:items-center gap-[6px]"
-            >
-              {/* URL Input Box (#30:7) */}
-              <div className="flex-1 bg-[#242628] rounded-[12px] px-[24px] py-[16px] flex items-center justify-between gap-3 focus-within:ring-1 focus-within:ring-white/25 transition">
-                <input
-                  type="text"
-                  placeholder="Enter an URL"
-                  value={targetUrl}
-                  onChange={(e) => setTargetUrl(e.target.value)}
-                  autoFocus
-                  className="w-full bg-transparent text-[16px] leading-[24px] text-white placeholder-[#7E7E81] focus:outline-none"
-                />
-
-                {activeProfile && (
-                  <button
-                    type="button"
-                    onClick={() => setIsAuthModalOpen(true)}
-                    className="px-2.5 py-1 rounded-[8px] bg-[#131415] text-[13px] text-[#7E7E81] hover:text-white shrink-0 transition cursor-pointer"
-                    title="Authenticated session attached"
-                  >
-                    {activeProfile.name}
-                  </button>
-                )}
-              </div>
-
-              {/* Primary CTA Button (#30:51) */}
-              <button
-                type="submit"
-                className="bg-white hover:bg-white/90 text-[#262627] rounded-[12px] px-[24px] py-[16px] text-[16px] leading-[24px] font-normal whitespace-nowrap transition cursor-pointer"
+    <div className="min-h-screen bg-canvas text-white">
+      {!projectsLoaded ? (
+        <div className="min-h-screen bg-canvas" />
+      ) : view === "compose" ? (
+        <ComposeScreen
+          targetUrl={targetUrl}
+          onTargetUrl={setTargetUrl}
+          onSubmit={handleStartDiscovery}
+          busy={runStatus === "discovering" || runStatus === "capturing"}
+          canGoBack={projects.length > 0}
+          onBack={goLibrary}
+          onOpenVault={() => {
+            fetchProfiles();
+            setIsAuthModalOpen(true);
+          }}
+          selectedProfileName={selectedProfile?.name}
+          onClearProfile={() => setSelectedProfileId("")}
+        />
+      ) : view === "library" ? (
+        <LibraryScreen
+          projects={visibleProjects}
+          search={search}
+          onSearch={setSearch}
+          onOpen={openProject}
+          onNewCrawl={() => {
+            clearRunView();
+            setTargetUrl("");
+            setView("compose");
+          }}
+          onOpenVault={() => {
+            fetchProfiles();
+            setIsAuthModalOpen(true);
+          }}
+        />
+      ) : (
+        <div className="page-frame">
+          <button type="button" aria-label="Back to crawls" onClick={goLibrary} className="inline-flex w-fit">
+            <FigmaIcon name="back" />
+          </button>
+          <header className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
+            <div className="flex min-w-0 flex-col gap-4">
+              <h1 className="text-display font-bold text-white">{activeProject?.name || "Site"}</h1>
+              <p className="text-body text-muted">{siteSummary}</p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <IconButton label="Recapture pages" disabled={!canRecapture} onClick={() => setRecaptureRequestId((id) => id + 1)}>
+                <FigmaIcon name="refresh" />
+              </IconButton>
+              <Button variant="secondary" disabled={!canExport} onClick={() => setIsExportOpen(true)}>
+                Export design.md
+              </Button>
+              <Button
+                disabled={!canExport}
+                onClick={() => {
+                  if (!currentRunId) return;
+                  const link = document.createElement("a");
+                  link.href = `/api/runs/${currentRunId}/exports/images.zip`;
+                  link.download = "images.zip";
+                  document.body.appendChild(link);
+                  link.click();
+                  link.remove();
+                }}
               >
-                New crawl
-              </button>
-            </form>
-          </div>
-        </main>
-      )}
-
-      {/* WIREFRAME - 4: "My crawls" (#30:248) */}
-      {!runStatus && homeMode === 'my_crawls' && (
-        <main className="flex-1 w-full max-w-[1440px] mx-auto px-6 md:px-12 lg:px-[80px] pt-10 lg:pt-[56px] pb-[40px] flex flex-col gap-[40px]">
-          {/* Header Row (#30:252) */}
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-            <h1 className="text-[32px] leading-[40px] font-bold text-white tracking-tight">
-              My crawls
-            </h1>
-
-            {/* Search Input (#30:304 / #30:305) */}
-            <div className="w-full md:w-[411px] bg-[#242628] rounded-[12px] px-[16px] py-[12px] flex items-center gap-[8px] focus-within:ring-1 focus-within:ring-white/25 transition">
-              <img src="/assets/figma/icon-search.svg" width={24} height={24} alt="" />
-              <input
-                type="text"
-                placeholder="Search"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full bg-transparent text-[16px] leading-[24px] text-white placeholder-[#7E7E81] focus:outline-none"
-              />
+                Export images
+              </Button>
             </div>
-          </div>
+          </header>
 
-          {/* Crawl Cards Grid (#30:279) */}
-          {filteredCrawls.length === 0 ? (
-            <div className="bg-[#0C0D0D] rounded-[24px] p-12 flex flex-col items-center justify-center gap-4 text-center">
-              <p className="text-[16px] leading-[24px] text-[#7E7E81]">
-                {crawls.length === 0
-                  ? 'You have not run any crawls yet.'
-                  : 'No crawls match your search.'}
-              </p>
-              {crawls.length === 0 && (
-                <button
-                  onClick={() => setHomeMode('new_crawl')}
-                  className="bg-white hover:bg-white/90 text-[#262627] rounded-[12px] px-6 py-3 text-[16px] leading-[24px] transition cursor-pointer"
-                >
-                  Start your first crawl
-                </button>
-              )}
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-[24px]">
-              {filteredCrawls.map((crawl) => (
-                <div
-                  key={crawl.run_id}
-                  onClick={() => handleOpenExistingCrawl(crawl)}
-                  className="group bg-[#0C0D0D] rounded-[24px] p-[24px] flex flex-col gap-[16px] border border-transparent hover:border-[#242628] transition cursor-pointer"
-                >
-                  {/* Thumbnail Preview (#30:281 — EL-cde1ee1c) */}
-                  <div className="relative bg-[#1D1D1E] rounded-[12px] h-[258px] overflow-hidden flex items-start justify-center">
-                    {crawl.preview_url ? (
-                      <img
-                        src={crawl.preview_url}
-                        alt={crawl.site_name}
-                        className="w-full h-full object-cover object-top transition duration-300 group-hover:scale-[1.02]"
-                        loading="lazy"
-                      />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center text-[15px] text-[#7E7E81] font-mono px-4 text-center">
-                        {crawl.base_url}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Card Text Info (#30:282 — EL-e03b43ef) */}
-                  <div className="px-[12px] flex flex-col gap-[8px]">
-                    <div className="text-[16px] leading-[24px] text-white font-normal truncate">
-                      {crawl.site_name}
-                    </div>
-                    <div className="flex items-center gap-[8px] text-[16px] leading-[24px] text-[#7E7E81] flex-wrap">
-                      <span>{crawl.screens_count} screens</span>
-                      <span>{crawl.components_count} components</span>
-                      <span>{crawl.tokens_count} tokens</span>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </main>
-      )}
-
-      {/* ACTIVE RUN VIEWS (Discovery Progress, Route Review, or Wireframe - 3 Site Gallery) */}
-      {runStatus && (
-        <main className="flex-1 w-full max-w-[1440px] mx-auto px-6 md:px-12 lg:px-[80px] pt-10 lg:pt-[80px] pb-[40px] flex flex-col gap-[40px]">
-          {/* Discovering State */}
-          {runStatus === 'discovering' && (
-            <div className="flex-1 flex flex-col items-center justify-center py-20">
-              <LiveCrawlProgress
-                text={progressText}
-                percent={progressPercent}
-                status={runStatus}
-                targetUrl={currentBaseUrl}
-                onCancel={handleBackToHome}
-              />
-            </div>
+          {(runStatus === "discovering" || runStatus === "capturing" || runStatus === "failed") && (
+            <LiveCrawlProgress text={progressText} percent={progressPercent} status={runStatus} />
           )}
 
-          {/* Failed State */}
-          {runStatus === 'failed' && (
-            <div className="flex-1 flex flex-col items-center justify-center py-20">
-              <LiveCrawlProgress
-                text={progressText}
-                percent={progressPercent}
-                status={runStatus}
-                targetUrl={currentBaseUrl}
-                onCancel={handleBackToHome}
-              />
-            </div>
-          )}
-
-          {/* Route Review State */}
-          {runStatus === 'review_pending' && (
+          {runStatus === "review_pending" && patterns.length > 0 && (
             <DiscoveryReview
-              runId={currentRunId || ''}
-              siteName={currentSiteName}
-              baseUrl={currentBaseUrl}
+              runId={currentRunId || ""}
               patterns={patterns}
               onToggleRoute={handleToggleRoute}
               onTogglePattern={handleTogglePattern}
               onProceedToCapture={handleProceedToCapture}
-              onBack={handleBackToHome}
             />
           )}
 
-          {/* WIREFRAME - 3: Site Detail & Gallery View (#30:192) */}
-          {(runStatus === 'capturing' || runStatus === 'completed') && (
-            <>
-              {runStatus === 'capturing' && (
-                <LiveCrawlProgress
-                  text={progressText}
-                  percent={progressPercent}
-                  status={runStatus}
-                  targetUrl={currentBaseUrl}
-                />
-              )}
-              <StudioGallery
-                runId={currentRunId || ''}
-                siteName={currentSiteName}
-                baseUrl={currentBaseUrl}
-                screens={galleryScreens}
-                sections={gallerySections}
-                modals={galleryModals}
-                components={galleryComponents}
-                tokens={galleryTokens}
-                onReset={handleBackToHome}
-                onRecapture={handleRecaptureRoutes}
-                isLiveCapturing={runStatus === 'capturing'}
-              />
-            </>
+          {(runStatus === "capturing" || runStatus === "completed" || (runStatus === "failed" && galleryScreens.length > 0)) && (
+            <StudioGallery
+              runId={currentRunId || ""}
+              screens={galleryScreens}
+              sections={gallerySections}
+              modals={galleryModals}
+              components={galleryComponents}
+              tokens={galleryTokens}
+              onRecapture={handleRecaptureRoutes}
+              isLiveCapturing={runStatus === "capturing"}
+              recaptureRequestId={recaptureRequestId}
+            />
           )}
-        </main>
+        </div>
       )}
 
-      {/* Auth Session Vault Modal */}
       <AuthVaultModal
         isOpen={isAuthModalOpen}
         onClose={() => {
@@ -623,8 +468,173 @@ export function App() {
         selectedProfileId={selectedProfileId}
         onProfileSelected={(id) => setSelectedProfileId(id)}
       />
+      {currentRunId && <ExportDrawer isOpen={isExportOpen} onClose={() => setIsExportOpen(false)} runId={currentRunId} />}
+      <a href="#/docs" className="fixed bottom-6 left-6 z-30 text-caption text-subtle hover:text-white">
+        Design system
+      </a>
     </div>
   );
+}
+
+function ComposeScreen({
+  targetUrl,
+  onTargetUrl,
+  onSubmit,
+  busy,
+  canGoBack,
+  onBack,
+  onOpenVault,
+  selectedProfileName,
+  onClearProfile,
+}: {
+  targetUrl: string;
+  onTargetUrl: (value: string) => void;
+  onSubmit: () => void;
+  busy: boolean;
+  canGoBack: boolean;
+  onBack: () => void;
+  onOpenVault: () => void;
+  selectedProfileName?: string;
+  onClearProfile: () => void;
+}) {
+  return (
+    <div className="relative flex min-h-screen items-center justify-center bg-canvas px-6">
+      {canGoBack && (
+        <button type="button" aria-label="Back to crawls" onClick={onBack} className="absolute left-6 top-10 inline-flex md:left-20 md:top-20">
+          <FigmaIcon name="back" />
+        </button>
+      )}
+      <div className="absolute right-6 top-10 md:right-20 md:top-20">
+        <IconButton label="Authenticated sessions" onClick={onOpenVault}>
+          <KeyRound size={24} />
+        </IconButton>
+      </div>
+      <form
+        className="flex w-full max-w-[800px] flex-col items-center gap-6"
+        onSubmit={(event) => {
+          event.preventDefault();
+          onSubmit();
+        }}
+      >
+        <h1 className="text-center text-display font-semibold text-white">Start your first crawl</h1>
+        <div className="flex w-full items-center gap-1.5">
+          <TextField
+            fieldSize="large"
+            type="text"
+            required
+            placeholder="Enter an URL"
+            value={targetUrl}
+            onChange={(event) => onTargetUrl(event.target.value)}
+            className="flex-1"
+          />
+          <Button type="submit" size="large" disabled={busy}>
+            New crawl
+          </Button>
+        </div>
+        {selectedProfileName && (
+          <Chip kind="filled" label={selectedProfileName} onDismiss={onClearProfile} />
+        )}
+      </form>
+    </div>
+  );
+}
+
+function LibraryScreen({
+  projects,
+  search,
+  onSearch,
+  onOpen,
+  onNewCrawl,
+  onOpenVault,
+}: {
+  projects: Project[];
+  search: string;
+  onSearch: (value: string) => void;
+  onOpen: (project: Project) => void;
+  onNewCrawl: () => void;
+  onOpenVault: () => void;
+}) {
+  return (
+    <div className="page-frame">
+      <header className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
+        <h1 className="text-display font-bold text-white">My crawls</h1>
+        <div className="flex w-full flex-wrap items-center gap-2 lg:w-auto lg:flex-nowrap">
+          <IconButton label="Authenticated sessions" onClick={onOpenVault}>
+            <KeyRound size={24} />
+          </IconButton>
+          <Button onClick={onNewCrawl}>New crawl</Button>
+          <SearchField value={search} onChange={onSearch} />
+        </div>
+      </header>
+      {projects.length === 0 ? (
+        <p className="text-body text-muted">No crawls match this search.</p>
+      ) : (
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
+          {projects.map((project) => (
+            <MediaCard
+              key={project.id}
+              title={project.name}
+              imageUrl={project.preview_url}
+              imageAlt={project.name}
+              fallbackText={project.base_url}
+              meta={projectMeta(project)}
+              onClick={() => onOpen(project)}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function projectMeta(project: Project): string[] {
+  const run = project.latest_run;
+  const host = hostname(project.base_url);
+  if (run && run.status === "completed" && (run.screens_count || 0) > 0) {
+    const when = formatMetaDate(run.created_at || project.created_at);
+    return [`${run.screens_count} screens`, `${run.components_count || 0} components`, when];
+  }
+  const status = run ? statusLabel(run.status) : "Not started";
+  const when = formatMetaDate(run?.created_at || project.created_at);
+  return [host, status, when];
+}
+
+function hostname(url: string) {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return url;
+  }
+}
+
+function statusLabel(status: string) {
+  switch (status) {
+    case "discovering":
+      return "Discovering";
+    case "review_pending":
+      return "Review";
+    case "capturing":
+      return "Capturing";
+    case "completed":
+      return "Completed";
+    case "failed":
+      return "Failed";
+    case "idle":
+      return "Idle";
+    default:
+      return status;
+  }
+}
+
+function formatMetaDate(iso: string) {
+  const normalized = /(?:Z|[+-]\d{2}:\d{2})$/.test(iso) ? iso : `${iso}Z`;
+  const date = new Date(normalized);
+  if (Number.isNaN(date.getTime())) return iso;
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    timeZone: "America/Bahia",
+  }).format(date);
 }
 
 export default App;
