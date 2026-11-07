@@ -1,5 +1,7 @@
-import React, { useState } from 'react';
-import { Layers, CheckSquare, Square, ChevronDown, ChevronRight, Sparkles, Monitor, Smartphone, Moon, Sun, ArrowRight } from 'lucide-react';
+import React, { useState } from "react";
+import { CheckSquare, ChevronDown, ChevronRight, MinusSquare, Square } from "lucide-react";
+import { Button } from "./ui/Button";
+import { Chip } from "./ui/Chip";
 
 interface RouteItem {
   id: string;
@@ -24,7 +26,12 @@ interface DiscoveryReviewProps {
   patterns: PatternGroup[];
   onToggleRoute: (routeId: string, currentSelected: boolean) => void;
   onTogglePattern: (pattern: string, selectAll: boolean) => void;
-  onProceedToCapture: (config: any) => void;
+  onProceedToCapture: (config: {
+    runId: string;
+    viewports: { desktop: boolean; mobile: boolean; tablet: boolean; ultrawide: boolean };
+    themes: { light: boolean; dark: boolean };
+    include_fold: boolean;
+  }) => void;
 }
 
 export const DiscoveryReview: React.FC<DiscoveryReviewProps> = ({
@@ -43,12 +50,8 @@ export const DiscoveryReview: React.FC<DiscoveryReviewProps> = ({
   const [includeUltrawide, setIncludeUltrawide] = useState(false);
   const [includeFold, setIncludeFold] = useState(false);
 
-  const toggleExpand = (pattern: string) => {
-    setExpandedPatterns((prev) => ({ ...prev, [pattern]: !prev[pattern] }));
-  };
-
-  const totalDiscovered = patterns.reduce((sum, p) => sum + p.total_routes, 0);
-  const totalSelected = patterns.reduce((sum, p) => sum + p.selected_count, 0);
+  const totalDiscovered = patterns.reduce((sum, group) => sum + group.total_routes, 0);
+  const totalSelected = patterns.reduce((sum, group) => sum + group.selected_count, 0);
 
   const handleLaunchCapture = () => {
     onProceedToCapture({
@@ -68,214 +71,94 @@ export const DiscoveryReview: React.FC<DiscoveryReviewProps> = ({
   };
 
   return (
-    <div className="space-y-6">
-      {/* Top Banner: Stats & Config Bar */}
-      <div className="p-5 rounded-2xl bg-gradient-to-r from-slate-900 to-slate-900/60 border border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-emerald-400">
-            <Sparkles size={14} />
-            Smart Discovery & Pattern Deduplication
-          </div>
-          <h2 className="text-xl font-bold text-white mt-1">
-            {totalDiscovered} Routes Discovered across {patterns.length} Patterns
+    <div className="flex flex-col gap-6">
+      <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+        <div className="flex max-w-3xl flex-col gap-2">
+          <h2 className="text-body text-white">
+            {totalDiscovered} routes across {patterns.length} patterns
           </h2>
-          <p className="text-xs text-slate-400 mt-0.5">
-            Dynamic routes (e.g. <span className="font-mono text-emerald-400">/projects/:id</span>) have 1 representative sample pre-selected to prevent infinite crawls.
+          <p className="text-body text-muted">
+            Dynamic routes keep one representative sample so the crawl does not loop.
           </p>
         </div>
-
-        <div className="flex items-center gap-4">
-          <div className="text-right">
-            <div className="text-2xl font-bold text-white">{totalSelected}</div>
-            <div className="text-xs text-slate-400">Routes Queued</div>
-          </div>
-          <button
-            onClick={handleLaunchCapture}
-            disabled={totalSelected === 0}
-            className="px-5 py-2.5 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-40 text-slate-950 font-semibold text-sm rounded-xl flex items-center gap-2 shadow-lg shadow-emerald-500/20 transition cursor-pointer"
-          >
-            <span>Proceed to Capture</span>
-            <ArrowRight size={16} />
-          </button>
-        </div>
-      </div>
-
-      {/* Preset Viewport & Theme Selector */}
-      <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800 flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-2">
-          <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider mr-2">Capture Matrix:</span>
-
-          {/* Viewports */}
-          <button
-            onClick={() => setIncludeDesktop(!includeDesktop)}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium border flex items-center gap-1.5 transition ${
-              includeDesktop ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300' : 'bg-slate-950 border-slate-800 text-slate-500'
-            }`}
-          >
-            <Monitor size={14} />
-            Desktop (1440px)
-          </button>
-          <button
-            onClick={() => setIncludeMobile(!includeMobile)}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium border flex items-center gap-1.5 transition ${
-              includeMobile ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300' : 'bg-slate-950 border-slate-800 text-slate-500'
-            }`}
-          >
-            <Smartphone size={14} />
-            Mobile (375px)
-          </button>
-          <button
-            onClick={() => setIncludeTablet(!includeTablet)}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium border flex items-center gap-1.5 transition ${
-              includeTablet ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300' : 'bg-slate-950 border-slate-800 text-slate-500'
-            }`}
-          >
-            Tablet (768px)
-          </button>
-          <button
-            onClick={() => setIncludeUltrawide(!includeUltrawide)}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium border flex items-center gap-1.5 transition ${
-              includeUltrawide ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300' : 'bg-slate-950 border-slate-800 text-slate-500'
-            }`}
-          >
-            Ultrawide (1920px)
-          </button>
-        </div>
-
-        {/* Themes */}
-        <div className="flex items-center gap-2 border-l border-slate-800 pl-4">
-          <button
-            onClick={() => setIncludeLight(!includeLight)}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium border flex items-center gap-1.5 transition ${
-              includeLight ? 'bg-amber-500/10 border-amber-500/30 text-amber-300' : 'bg-slate-950 border-slate-800 text-slate-500'
-            }`}
-          >
-            <Sun size={14} />
-            Light Mode
-          </button>
-          <button
-            onClick={() => setIncludeDark(!includeDark)}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium border flex items-center gap-1.5 transition ${
-              includeDark ? 'bg-indigo-500/10 border-indigo-500/30 text-indigo-300' : 'bg-slate-950 border-slate-800 text-slate-500'
-            }`}
-          >
-            <Moon size={14} />
-            Dark Mode
-          </button>
-        </div>
-
-        {/* Capture Scope (Full Page vs Fold) */}
-        <div className="flex items-center gap-2 border-l border-slate-800 pl-4">
-          <button
-            onClick={() => setIncludeFold(false)}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium border flex items-center gap-1.5 transition ${
-              !includeFold ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300 font-semibold' : 'bg-slate-950 border-slate-800 text-slate-500'
-            }`}
-          >
-            <span>Full Page Only (Default)</span>
-          </button>
-          <button
-            onClick={() => setIncludeFold(true)}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium border flex items-center gap-1.5 transition ${
-              includeFold ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300 font-semibold' : 'bg-slate-950 border-slate-800 text-slate-500'
-            }`}
-          >
-            <span>+ Fold Screen</span>
-          </button>
+          <p className="px-3 text-body text-muted">{totalSelected} queued</p>
+          <Button onClick={handleLaunchCapture} disabled={totalSelected === 0}>
+            Start capture
+          </Button>
         </div>
       </div>
 
-      {/* Pattern Groups List */}
-      <div className="space-y-3">
-        {patterns.map((grp) => {
-          const isExpanded = !!expandedPatterns[grp.pattern];
-          const allSelected = grp.selected_count === grp.total_routes;
-          const someSelected = grp.selected_count > 0 && !allSelected;
+      <div className="flex flex-wrap gap-2">
+        <Chip label="Desktop" kind={includeDesktop ? "filled" : "outline"} onClick={() => setIncludeDesktop(!includeDesktop)} />
+        <Chip label="Mobile" kind={includeMobile ? "filled" : "outline"} onClick={() => setIncludeMobile(!includeMobile)} />
+        <Chip label="Tablet" kind={includeTablet ? "filled" : "outline"} onClick={() => setIncludeTablet(!includeTablet)} />
+        <Chip label="Ultrawide" kind={includeUltrawide ? "filled" : "outline"} onClick={() => setIncludeUltrawide(!includeUltrawide)} />
+        <Chip label="Light" kind={includeLight ? "filled" : "outline"} onClick={() => setIncludeLight(!includeLight)} />
+        <Chip label="Dark" kind={includeDark ? "filled" : "outline"} onClick={() => setIncludeDark(!includeDark)} />
+        <Chip label="Above the fold" kind={includeFold ? "filled" : "outline"} onClick={() => setIncludeFold(!includeFold)} />
+      </div>
+
+      <div className="flex flex-col gap-2">
+        {patterns.map((group) => {
+          const isExpanded = !!expandedPatterns[group.pattern];
+          const allSelected = group.selected_count === group.total_routes;
+          const someSelected = group.selected_count > 0 && !allSelected;
 
           return (
-            <div
-              key={grp.pattern}
-              className="rounded-xl bg-slate-900/50 border border-slate-800 overflow-hidden transition"
-            >
-              {/* Group Header */}
-              <div className="flex items-center justify-between p-4 bg-slate-900/80 hover:bg-slate-900 transition">
-                <div className="flex items-center gap-3">
+            <div key={group.pattern} className="overflow-hidden rounded-card bg-sunken">
+              <div className="flex items-center justify-between gap-4 px-6 py-4">
+                <div className="flex min-w-0 items-center gap-4">
                   <button
-                    onClick={() => onTogglePattern(grp.pattern, !allSelected)}
-                    className="text-slate-400 hover:text-emerald-400 transition"
+                    type="button"
+                    aria-label={allSelected ? "Deselect pattern" : "Select pattern"}
+                    onClick={() => onTogglePattern(group.pattern, !allSelected)}
+                    className="text-white"
                   >
                     {allSelected ? (
-                      <CheckSquare size={18} className="text-emerald-400" />
+                      <CheckSquare size={24} />
                     ) : someSelected ? (
-                      <div className="w-[18px] h-[18px] rounded border border-emerald-400 bg-emerald-500/20 flex items-center justify-center">
-                        <div className="w-2 h-0.5 bg-emerald-400" />
-                      </div>
+                      <MinusSquare size={24} />
                     ) : (
-                      <Square size={18} />
+                      <Square size={24} className="text-muted" />
                     )}
                   </button>
-
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono text-sm font-semibold text-slate-100">{grp.pattern}</span>
-                    {grp.total_routes > 1 && (
-                      <span className="px-2 py-0.5 rounded-full bg-slate-800 text-[11px] font-mono text-slate-400 border border-slate-700">
-                        {grp.total_routes} instances
-                      </span>
-                    )}
+                  <div className="min-w-0">
+                    <p className="truncate text-body text-white">{group.pattern}</p>
+                    <p className="text-label text-muted">
+                      {group.selected_count} of {group.total_routes} selected
+                    </p>
                   </div>
                 </div>
-
-                <div className="flex items-center gap-4">
-                  <div className="text-xs text-slate-400">
-                    <span className="font-semibold text-slate-200">{grp.selected_count}</span> of {grp.total_routes} selected
-                  </div>
-
-                  {grp.total_routes > 1 && (
-                    <button
-                      onClick={() => toggleExpand(grp.pattern)}
-                      className="p-1 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition"
-                    >
-                      {isExpanded ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
-                    </button>
-                  )}
-                </div>
+                {group.total_routes > 1 && (
+                  <button
+                    type="button"
+                    aria-label={isExpanded ? "Collapse routes" : "Expand routes"}
+                    onClick={() => setExpandedPatterns((prev) => ({ ...prev, [group.pattern]: !prev[group.pattern] }))}
+                    className="text-white"
+                  >
+                    {isExpanded ? <ChevronDown size={24} /> : <ChevronRight size={24} />}
+                  </button>
+                )}
               </div>
 
-              {/* Sub-routes (Expanded or Single) */}
-              {(isExpanded || grp.total_routes === 1) && (
-                <div className="divide-y divide-slate-800/60 bg-slate-950/40">
-                  {grp.routes.map((rt) => (
-                    <div
-                      key={rt.id}
-                      className="flex items-center justify-between px-6 py-2.5 hover:bg-slate-900/30 transition text-xs"
-                    >
-                      <div className="flex items-center gap-3 pl-2">
+              {(isExpanded || group.total_routes === 1) && (
+                <div className="flex flex-col border-t border-line">
+                  {group.routes.map((route) => (
+                    <div key={route.id} className="flex items-center justify-between gap-4 px-6 py-3">
+                      <div className="flex min-w-0 items-center gap-4">
                         <button
-                          onClick={() => onToggleRoute(rt.id, rt.is_selected)}
-                          className="text-slate-500 hover:text-emerald-400 transition"
+                          type="button"
+                          aria-label={route.is_selected ? "Deselect route" : "Select route"}
+                          onClick={() => onToggleRoute(route.id, route.is_selected)}
+                          className="text-white"
                         >
-                          {rt.is_selected ? (
-                            <CheckSquare size={16} className="text-emerald-400" />
-                          ) : (
-                            <Square size={16} />
-                          )}
+                          {route.is_selected ? <CheckSquare size={24} /> : <Square size={24} className="text-muted" />}
                         </button>
-                        <span className="font-mono text-slate-300">{rt.path}</span>
-                        {rt.is_sample && grp.total_routes > 1 && (
-                          <span className="px-1.5 py-0.2 rounded bg-emerald-500/10 text-emerald-400 font-mono text-[10px] border border-emerald-500/20">
-                            Representative Sample
-                          </span>
-                        )}
-                        {!rt.is_sample && (
-                          <span className="px-1.5 py-0.2 rounded bg-slate-800 text-slate-500 font-mono text-[10px]">
-                            Pattern Duplicate
-                          </span>
-                        )}
+                        <p className="truncate text-body text-white">{route.path}</p>
+                        {route.is_sample && group.total_routes > 1 && <span className="text-label text-muted">Sample</span>}
                       </div>
-
-                      <div className="text-slate-500 font-mono text-[11px] truncate max-w-xs">
-                        {rt.full_url}
-                      </div>
+                      <p className="hidden max-w-xs truncate text-label text-subtle md:block">{route.full_url}</p>
                     </div>
                   ))}
                 </div>
