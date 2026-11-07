@@ -1,9 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
-  Monitor, Smartphone, Moon, Sun, Layers, LayoutGrid, Box,
-  Eye, Download, Code, Sparkles, Filter, ExternalLink, X,
-  Maximize2, Minimize2, Palette, ShieldAlert, ZoomIn, ZoomOut,
-  ChevronLeft, ChevronRight, RefreshCw, CheckSquare, Square
+  Download, X, Maximize2, Minimize2, ZoomIn, ZoomOut,
+  ChevronLeft, ChevronRight, Check
 } from 'lucide-react';
 import { TokenInspector } from './TokenInspector';
 import { ExportDrawer } from './ExportDrawer';
@@ -60,6 +58,8 @@ interface LightboxItem {
 
 interface StudioGalleryProps {
   runId: string;
+  siteName?: string;
+  baseUrl?: string;
   screens: ScreenItem[];
   sections: SectionItem[];
   modals?: ModalItem[];
@@ -70,8 +70,22 @@ interface StudioGalleryProps {
   isLiveCapturing?: boolean;
 }
 
+function formatRouteTitle(routePath: string): string {
+  if (!routePath || routePath === '/') return 'Home (/)';
+  const cleaned = routePath.replace(/^\/+/, '').replace(/[-_]/g, ' ');
+  const capitalized = cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+  return `${capitalized} (${routePath})`;
+}
+
+function capitalizeWord(str: string): string {
+  if (!str) return '';
+  return str.charAt(0).toUpperCase() + str.slice(1);
+}
+
 export const StudioGallery: React.FC<StudioGalleryProps> = ({
   runId,
+  siteName = 'Site name',
+  baseUrl = '',
   screens,
   sections,
   modals = [],
@@ -85,9 +99,8 @@ export const StudioGallery: React.FC<StudioGalleryProps> = ({
   const [viewportFilter, setViewportFilter] = useState<string>('all');
   const [themeFilter, setThemeFilter] = useState<string>('all');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
-
-  // Default to Full Page Only
   const [foldFilter, setFoldFilter] = useState<string>('full_page');
+  const [isFilterOpen, setIsFilterOpen] = useState<boolean>(false);
 
   // Interactive Lightbox State
   const [lightboxItems, setLightboxItems] = useState<LightboxItem[]>([]);
@@ -102,6 +115,7 @@ export const StudioGallery: React.FC<StudioGalleryProps> = ({
   const [isRecaptureModalOpen, setIsRecaptureModalOpen] = useState(false);
   const [selectedRecaptureRoutes, setSelectedRecaptureRoutes] = useState<Record<string, boolean>>({});
 
+  // Export Modal State
   const [isExportDrawerOpen, setIsExportDrawerOpen] = useState(false);
 
   // Filter logic
@@ -124,14 +138,15 @@ export const StudioGallery: React.FC<StudioGalleryProps> = ({
     return true;
   });
 
+  const availableViewports = Array.from(new Set(screens.map((s) => s.viewport_label).filter(Boolean)));
+  const availableThemes = Array.from(new Set(screens.map((s) => s.theme).filter(Boolean)));
   const sectionCategories = Array.from(new Set(sections.map((s) => s.section_category).filter(Boolean)));
   const componentCategories = Array.from(new Set(components.map((c) => c.category).filter(Boolean)));
   const allUniqueRoutes = Array.from(new Set(screens.map((s) => s.route_path))).sort();
 
-  // Keyboard Navigation: Arrow keys, Zoom, and Escape
+  // Keyboard Navigation
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // 1. Lightbox Navigation
       if (lightboxIndex !== null && lightboxItems.length > 0) {
         if (e.key === 'ArrowLeft') {
           e.preventDefault();
@@ -157,7 +172,6 @@ export const StudioGallery: React.FC<StudioGalleryProps> = ({
         }
       }
 
-      // 2. Component Inspector Navigation
       if (componentIndex !== null && filteredComponents.length > 0) {
         if (e.key === 'ArrowLeft') {
           e.preventDefault();
@@ -181,8 +195,8 @@ export const StudioGallery: React.FC<StudioGalleryProps> = ({
     const items: LightboxItem[] = filteredScreens.map((s) => ({
       id: s.id,
       url: s.url,
-      title: s.route_path,
-      subtitle: `${s.viewport_label} • ${s.width}×${s.height} • ${s.theme} • ${s.capture_type.replace('_', ' ')}`,
+      title: formatRouteTitle(s.route_path),
+      subtitle: `${capitalizeWord(s.viewport_label)} • ${s.width}×${s.height} • ${capitalizeWord(s.theme)}`,
       route_path: s.route_path,
       type: 'screen',
     }));
@@ -196,8 +210,8 @@ export const StudioGallery: React.FC<StudioGalleryProps> = ({
     const items: LightboxItem[] = filteredSections.map((sec) => ({
       id: sec.id,
       url: sec.url,
-      title: `${sec.section_category} (${sec.route_path})`,
-      subtitle: `${sec.viewport_label} • ${sec.width}×${sec.height} • ${sec.theme}`,
+      title: `${capitalizeWord(sec.section_category)} (${sec.route_path})`,
+      subtitle: `${capitalizeWord(sec.viewport_label)} • ${sec.width}×${sec.height} • ${capitalizeWord(sec.theme)}`,
       route_path: sec.route_path,
       type: 'section',
     }));
@@ -222,7 +236,6 @@ export const StudioGallery: React.FC<StudioGalleryProps> = ({
     setIsFitMode(true);
   };
 
-  // Wheel zoom handler
   const handleWheel = (e: React.WheelEvent) => {
     if (e.ctrlKey || e.metaKey || isFitMode) {
       if (e.deltaY < 0) {
@@ -236,7 +249,6 @@ export const StudioGallery: React.FC<StudioGalleryProps> = ({
   const currentLightboxItem = lightboxIndex !== null && lightboxItems[lightboxIndex] ? lightboxItems[lightboxIndex] : null;
   const currentComponent = componentIndex !== null && filteredComponents[componentIndex] ? filteredComponents[componentIndex] : null;
 
-  // Recapture modal handlers
   const handleOpenRecaptureModal = () => {
     const initial: Record<string, boolean> = {};
     allUniqueRoutes.forEach((r) => {
@@ -258,249 +270,376 @@ export const StudioGallery: React.FC<StudioGalleryProps> = ({
     }
   };
 
+  const triggerDirectDownload = (filename: string) => {
+    const link = document.createElement('a');
+    link.href = `/api/runs/${runId}/exports/${filename}`;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  // Build site summary string matching Figma #30:199
+  const summaryParts: string[] = [];
+  if (baseUrl) summaryParts.push(baseUrl);
+  summaryParts.push(`${screens.length} screens`);
+  if (sections.length > 0) summaryParts.push(`${sections.length} sections`);
+  if (components.length > 0) summaryParts.push(`${components.length} components`);
+  if (tokens.length > 0) summaryParts.push(`${tokens.length} tokens`);
+  const siteSummary = summaryParts.join(' • ');
+
   return (
-    <div className="space-y-6">
-      {/* Top Header & Tab Switcher */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-4">
+    <div className="flex flex-col gap-10">
+      {/* 1. Back Icon Button (#30:194) */}
+      {onReset && (
         <div>
-          <div className="flex items-center gap-3">
-            <h2 className="text-xl font-bold text-white flex items-center gap-2">
-              <LayoutGrid size={20} className="text-emerald-400" />
-              Visual Intelligence Gallery
-            </h2>
+          <button
+            onClick={onReset}
+            className="w-10 h-10 -ml-2 rounded-[12px] hover:bg-[#242628]/60 flex items-center justify-center transition cursor-pointer"
+            title="Back to My crawls"
+          >
+            <img src="/assets/figma/icon-back.svg" width={24} height={24} alt="Back" />
+          </button>
+        </div>
+      )}
+
+      {/* 2. Site Header Row (#30:196) */}
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+        <div className="flex flex-col gap-4 max-w-[540px]">
+          <div className="flex items-center gap-3 flex-wrap">
+            <h1 className="text-[32px] leading-[40px] font-bold text-white tracking-tight">
+              {siteName}
+            </h1>
             {isLiveCapturing && (
-              <span className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[11px] font-mono animate-pulse">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                Live streaming captures...
+              <span className="px-3 py-1 rounded-[12px] bg-[#252627] text-[13px] text-white flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-white animate-pulse" />
+                Capturing live...
               </span>
             )}
           </div>
-          <p className="text-xs text-slate-400 mt-0.5">
-            Explore screens, sections, interactive modals, UI components, and extracted tokens in real time.
+          <p className="text-[16px] leading-[24px] text-[#7E7E81]">
+            {siteSummary}
           </p>
         </div>
 
-        {/* Action Controls */}
+        {/* Right Action Row (#30:200) */}
         <div className="flex items-center gap-2 flex-wrap">
-          {onRecapture && allUniqueRoutes.length > 0 && (
+          {onRecapture && (
             <button
               onClick={handleOpenRecaptureModal}
-              className="px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 hover:border-slate-700 text-slate-200 font-semibold text-xs flex items-center gap-1.5 transition cursor-pointer"
+              className="px-4 py-3 rounded-[12px] border border-[#242628] hover:bg-[#242628]/60 flex items-center justify-center transition cursor-pointer"
+              title="Recapture pages"
             >
-              <RefreshCw size={14} className="text-emerald-400" />
-              <span>Recapture Pages...</span>
+              <img src="/assets/figma/icon-refresh.svg" width={25} height={24} alt="Recapture" />
             </button>
           )}
 
           <button
-            onClick={() => setIsExportDrawerOpen(true)}
-            className="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold text-xs flex items-center gap-2 shadow-lg shadow-emerald-500/20 transition cursor-pointer"
+            onClick={() => triggerDirectDownload('DESIGN_SYSTEM.md')}
+            className="px-4 py-3 rounded-[12px] border border-[#242628] hover:bg-[#242628]/60 text-[16px] leading-[24px] text-white transition cursor-pointer"
           >
-            <Sparkles size={15} />
-            <span>Export Context & Tokens</span>
+            Export design.md
+          </button>
+
+          <button
+            onClick={() => triggerDirectDownload('images.zip')}
+            className="px-4 py-3 rounded-[12px] bg-white hover:bg-white/90 text-[16px] leading-[24px] text-[#262627] font-normal transition cursor-pointer"
+          >
+            Export images
+          </button>
+
+          <button
+            onClick={() => setIsExportDrawerOpen(true)}
+            className="px-3.5 py-3 rounded-[12px] border border-[#242628] hover:bg-[#242628]/60 text-[14px] leading-[24px] text-[#7E7E81] hover:text-white transition cursor-pointer"
+            title="All export formats (CONTEXT.md, tokens.json, gallery.html)"
+          >
+            More...
           </button>
         </div>
       </div>
 
-      {/* Tabs */}
-      <div className="flex items-center p-1 rounded-2xl bg-slate-900 border border-slate-800 flex-wrap gap-1">
-        <button
-          onClick={() => { setActiveTab('screens'); setCategoryFilter('all'); }}
-          className={`px-4 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 transition ${
-            activeTab === 'screens' ? 'bg-emerald-500 text-slate-950 shadow-md' : 'text-slate-400 hover:text-white'
-          }`}
-        >
-          <Monitor size={14} />
-          <span>Full Screens</span>
-          <span className="px-1.5 py-0.2 rounded-full bg-black/20 text-[10px]">{screens.length}</span>
-        </button>
-
-        <button
-          onClick={() => { setActiveTab('sections'); setCategoryFilter('all'); }}
-          className={`px-4 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 transition ${
-            activeTab === 'sections' ? 'bg-emerald-500 text-slate-950 shadow-md' : 'text-slate-400 hover:text-white'
-          }`}
-        >
-          <Layers size={14} />
-          <span>Sections</span>
-          <span className="px-1.5 py-0.2 rounded-full bg-black/20 text-[10px]">{sections.length}</span>
-        </button>
-
-        <button
-          onClick={() => { setActiveTab('modals'); setCategoryFilter('all'); }}
-          className={`px-4 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 transition ${
-            activeTab === 'modals' ? 'bg-emerald-500 text-slate-950 shadow-md' : 'text-slate-400 hover:text-white'
-          }`}
-        >
-          <Maximize2 size={14} />
-          <span>Modals & Drawers</span>
-          <span className="px-1.5 py-0.2 rounded-full bg-black/20 text-[10px]">{modals.length}</span>
-        </button>
-
-        <button
-          onClick={() => { setActiveTab('components'); setCategoryFilter('all'); }}
-          className={`px-4 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 transition ${
-            activeTab === 'components' ? 'bg-emerald-500 text-slate-950 shadow-md' : 'text-slate-400 hover:text-white'
-          }`}
-        >
-          <Box size={14} />
-          <span>UI Components</span>
-          <span className="px-1.5 py-0.2 rounded-full bg-black/20 text-[10px]">{components.length}</span>
-        </button>
-
-        <button
-          onClick={() => { setActiveTab('tokens'); setCategoryFilter('all'); }}
-          className={`px-4 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 transition ${
-            activeTab === 'tokens' ? 'bg-emerald-500 text-slate-950 shadow-md' : 'text-slate-400 hover:text-white'
-          }`}
-        >
-          <Palette size={14} />
-          <span>Design Tokens</span>
-          <span className="px-1.5 py-0.2 rounded-full bg-black/20 text-[10px]">{tokens.length}</span>
-        </button>
-      </div>
-
-      {/* Filter Bar */}
-      {activeTab !== 'tokens' && activeTab !== 'modals' && (
-        <div className="p-3.5 rounded-xl bg-slate-900/60 border border-slate-800 flex flex-wrap items-center justify-between gap-3 text-xs">
+      {/* 3. Filter & View Switcher Row (#30:208) */}
+      <div className="flex flex-col gap-4">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          {/* Left: Filter Button + Active Filter Chips (#30:208) */}
           <div className="flex items-center gap-2 flex-wrap">
-            <Filter size={14} className="text-slate-500 mr-1" />
+            <button
+              onClick={() => setIsFilterOpen(!isFilterOpen)}
+              className={`px-4 py-3 rounded-[12px] border border-[#242628] hover:bg-[#242628]/60 flex items-center gap-2.5 text-[16px] leading-[24px] text-white transition cursor-pointer ${
+                isFilterOpen ? 'bg-[#242628]/60' : ''
+              }`}
+            >
+              <img src="/assets/figma/icon-filter.svg" width={24} height={24} alt="" />
+              <span>Filter</span>
+            </button>
 
-            {activeTab !== 'components' && (
+            {/* Active Viewport Chip (#30:213) */}
+            {activeTab !== 'components' && activeTab !== 'tokens' && activeTab !== 'modals' && (
               <>
-                <select
-                  value={viewportFilter}
-                  onChange={(e) => setViewportFilter(e.target.value)}
-                  className="bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-slate-300 focus:outline-none focus:border-emerald-500"
-                >
-                  <option value="all">All Viewports</option>
-                  <option value="desktop">Desktop (1440px)</option>
-                  <option value="mobile">Mobile (375px)</option>
-                  <option value="tablet">Tablet (768px)</option>
-                  <option value="ultrawide">Ultrawide (1920px)</option>
-                </select>
+                {viewportFilter !== 'all' ? (
+                  <button
+                    onClick={() => setViewportFilter('all')}
+                    className="px-4 py-3 rounded-[12px] bg-[#252627] hover:bg-[#2E3032] flex items-center gap-2.5 text-[16px] leading-[24px] text-white transition cursor-pointer"
+                    title="Clear viewport filter"
+                  >
+                    <span>{capitalizeWord(viewportFilter)}</span>
+                    <img src="/assets/figma/icon-chip-remove.svg" width={24} height={24} alt="Remove" />
+                  </button>
+                ) : (
+                  availableViewports.map((vp) => (
+                    <button
+                      key={vp}
+                      onClick={() => setViewportFilter(vp)}
+                      className="px-4 py-3 rounded-[12px] bg-[#252627] hover:bg-[#2E3032] flex items-center gap-2.5 text-[16px] leading-[24px] text-white transition cursor-pointer"
+                      title={`Filter by ${capitalizeWord(vp)}`}
+                    >
+                      <span>{capitalizeWord(vp)}</span>
+                      <img src="/assets/figma/icon-chip-remove.svg" width={24} height={24} alt="" />
+                    </button>
+                  ))
+                )}
 
-                <select
-                  value={themeFilter}
-                  onChange={(e) => setThemeFilter(e.target.value)}
-                  className="bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-slate-300 focus:outline-none focus:border-emerald-500"
+                {/* Active Theme Chip (#30:218) */}
+                {themeFilter !== 'all' ? (
+                  <button
+                    onClick={() => setThemeFilter('all')}
+                    className="px-4 py-3 rounded-[12px] bg-[#252627] hover:bg-[#2E3032] flex items-center gap-2.5 text-[16px] leading-[24px] text-white transition cursor-pointer"
+                    title="Clear theme filter"
+                  >
+                    <span>{capitalizeWord(themeFilter)}</span>
+                    <img src="/assets/figma/icon-chip-remove.svg" width={24} height={24} alt="Remove" />
+                  </button>
+                ) : (
+                  availableThemes.map((th) => (
+                    <button
+                      key={th}
+                      onClick={() => setThemeFilter(th)}
+                      className="px-4 py-3 rounded-[12px] bg-[#252627] hover:bg-[#2E3032] flex items-center gap-2.5 text-[16px] leading-[24px] text-white transition cursor-pointer"
+                      title={`Filter by ${capitalizeWord(th)}`}
+                    >
+                      <span>{capitalizeWord(th)}</span>
+                      <img src="/assets/figma/icon-chip-remove.svg" width={24} height={24} alt="" />
+                    </button>
+                  ))
+                )}
+              </>
+            )}
+
+            {/* Category Chip when filtered in Sections or Components */}
+            {categoryFilter !== 'all' && (
+              <button
+                onClick={() => setCategoryFilter('all')}
+                className="px-4 py-3 rounded-[12px] bg-[#252627] hover:bg-[#2E3032] flex items-center gap-2.5 text-[16px] leading-[24px] text-white transition cursor-pointer"
+              >
+                <span>{capitalizeWord(categoryFilter)}</span>
+                <img src="/assets/figma/icon-chip-remove.svg" width={24} height={24} alt="Remove" />
+              </button>
+            )}
+          </div>
+
+          {/* Right: Clean View Switcher Pills (Screens, Sections, Components, Modals, Tokens) */}
+          <div className="flex items-center gap-2 flex-wrap">
+            {[
+              { id: 'screens', label: 'Screens', count: screens.length },
+              { id: 'sections', label: 'Sections', count: sections.length },
+              { id: 'components', label: 'Components', count: components.length },
+              ...(modals.length > 0 ? [{ id: 'modals', label: 'Modals', count: modals.length }] : []),
+              { id: 'tokens', label: 'Tokens', count: tokens.length },
+            ].map((tab) => {
+              const isActive = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => {
+                    setActiveTab(tab.id as any);
+                    setCategoryFilter('all');
+                    if (tab.id === 'tokens' || tab.id === 'modals') {
+                      setIsFilterOpen(false);
+                    }
+                  }}
+                  className={`px-4 py-3 rounded-[12px] text-[16px] leading-[24px] flex items-center gap-2 transition cursor-pointer ${
+                    isActive
+                      ? 'bg-[#252627] text-white font-medium'
+                      : 'border border-[#242628] text-[#7E7E81] hover:text-white hover:bg-[#242628]/40'
+                  }`}
                 >
-                  <option value="all">All Themes</option>
-                  <option value="light">Light Mode</option>
-                  <option value="dark">Dark Mode</option>
-                </select>
+                  <span>{tab.label}</span>
+                  <span className="text-[14px] text-[#7E7E81]">{tab.count}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Expandable Filter Panel when "Filter" button is clicked */}
+        {isFilterOpen && (
+          <div className="p-6 rounded-[24px] bg-[#0C0D0D] border border-[#242628] flex flex-wrap items-center gap-8">
+            {activeTab !== 'components' && activeTab !== 'tokens' && activeTab !== 'modals' && (
+              <>
+                <div className="flex flex-col gap-2">
+                  <span className="text-[14px] text-[#7E7E81]">Viewport</span>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {['all', 'desktop', 'mobile', 'tablet', 'ultrawide'].map((vp) => (
+                      <button
+                        key={vp}
+                        onClick={() => setViewportFilter(vp)}
+                        className={`px-3.5 py-2 rounded-[12px] text-[14px] transition cursor-pointer ${
+                          viewportFilter === vp
+                            ? 'bg-white text-[#262627] font-medium'
+                            : 'bg-[#1D1D1E] text-[#7E7E81] hover:text-white'
+                        }`}
+                      >
+                        {vp === 'all' ? 'All viewports' : capitalizeWord(vp)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="flex flex-col gap-2">
+                  <span className="text-[14px] text-[#7E7E81]">Theme</span>
+                  <div className="flex items-center gap-2">
+                    {['all', 'light', 'dark'].map((th) => (
+                      <button
+                        key={th}
+                        onClick={() => setThemeFilter(th)}
+                        className={`px-3.5 py-2 rounded-[12px] text-[14px] transition cursor-pointer ${
+                          themeFilter === th
+                            ? 'bg-white text-[#262627] font-medium'
+                            : 'bg-[#1D1D1E] text-[#7E7E81] hover:text-white'
+                        }`}
+                      >
+                        {th === 'all' ? 'All themes' : capitalizeWord(th)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </>
             )}
 
             {activeTab === 'screens' && (
-              <select
-                value={foldFilter}
-                onChange={(e) => setFoldFilter(e.target.value)}
-                className="bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-slate-300 focus:outline-none focus:border-emerald-500"
-              >
-                <option value="full_page">Full Page Only (Default)</option>
-                <option value="fold">Above the Fold Only</option>
-                <option value="all">Full & Above-Fold</option>
-              </select>
+              <div className="flex flex-col gap-2">
+                <span className="text-[14px] text-[#7E7E81]">Capture scope</span>
+                <div className="flex items-center gap-2">
+                  {[
+                    { id: 'full_page', label: 'Full page' },
+                    { id: 'fold', label: 'Above fold' },
+                    { id: 'all', label: 'All' },
+                  ].map((sc) => (
+                    <button
+                      key={sc.id}
+                      onClick={() => setFoldFilter(sc.id)}
+                      className={`px-3.5 py-2 rounded-[12px] text-[14px] transition cursor-pointer ${
+                        foldFilter === sc.id
+                          ? 'bg-white text-[#262627] font-medium'
+                          : 'bg-[#1D1D1E] text-[#7E7E81] hover:text-white'
+                      }`}
+                    >
+                      {sc.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
             )}
 
             {activeTab === 'sections' && sectionCategories.length > 0 && (
-              <select
-                value={categoryFilter}
-                onChange={(e) => setCategoryFilter(e.target.value)}
-                className="bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-slate-300 focus:outline-none focus:border-emerald-500 capitalize"
-              >
-                <option value="all">All Section Types</option>
-                {sectionCategories.map((c) => (
-                  <option key={c} value={c}>{c}</option>
-                ))}
-              </select>
+              <div className="flex flex-col gap-2">
+                <span className="text-[14px] text-[#7E7E81]">Section type</span>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <button
+                    onClick={() => setCategoryFilter('all')}
+                    className={`px-3.5 py-2 rounded-[12px] text-[14px] transition cursor-pointer ${
+                      categoryFilter === 'all'
+                        ? 'bg-white text-[#262627] font-medium'
+                        : 'bg-[#1D1D1E] text-[#7E7E81] hover:text-white'
+                    }`}
+                  >
+                    All sections
+                  </button>
+                  {sectionCategories.map((cat) => (
+                    <button
+                      key={cat}
+                      onClick={() => setCategoryFilter(cat)}
+                      className={`px-3.5 py-2 rounded-[12px] text-[14px] capitalize transition cursor-pointer ${
+                        categoryFilter === cat
+                          ? 'bg-white text-[#262627] font-medium'
+                          : 'bg-[#1D1D1E] text-[#7E7E81] hover:text-white'
+                      }`}
+                    >
+                      {cat}
+                    </button>
+                  ))}
+                </div>
+              </div>
             )}
 
             {activeTab === 'components' && componentCategories.length > 0 && (
-              <select
-                value={categoryFilter}
-                onChange={(e) => setCategoryFilter(e.target.value)}
-                className="bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-slate-300 focus:outline-none focus:border-emerald-500 capitalize"
-              >
-                <option value="all">All Component Types</option>
-                {componentCategories.map((c) => (
-                  <option key={c} value={c}>{c}</option>
-                ))}
-              </select>
+              <div className="flex flex-col gap-2">
+                <span className="text-[14px] text-[#7E7E81]">Component category</span>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <button
+                    onClick={() => setCategoryFilter('all')}
+                    className={`px-3.5 py-2 rounded-[12px] text-[14px] transition cursor-pointer ${
+                      categoryFilter === 'all'
+                        ? 'bg-white text-[#262627] font-medium'
+                        : 'bg-[#1D1D1E] text-[#7E7E81] hover:text-white'
+                    }`}
+                  >
+                    All components
+                  </button>
+                  {componentCategories.map((cat) => (
+                    <button
+                      key={cat}
+                      onClick={() => setCategoryFilter(cat)}
+                      className={`px-3.5 py-2 rounded-[12px] text-[14px] capitalize transition cursor-pointer ${
+                        categoryFilter === cat
+                          ? 'bg-white text-[#262627] font-medium'
+                          : 'bg-[#1D1D1E] text-[#7E7E81] hover:text-white'
+                      }`}
+                    >
+                      {cat}
+                    </button>
+                  ))}
+                </div>
+              </div>
             )}
           </div>
+        )}
+      </div>
 
-          <div className="text-slate-500 text-[11px] font-mono">
-            Showing{' '}
-            {activeTab === 'screens' ? filteredScreens.length : activeTab === 'sections' ? filteredSections.length : filteredComponents.length}{' '}
-            items
-          </div>
-        </div>
-      )}
-
-      {/* 1. SCREENS VIEW */}
+      {/* 4. 3-Column Card Grid (#30:223) */}
+      {/* A. SCREENS GRID */}
       {activeTab === 'screens' && (
         filteredScreens.length === 0 ? (
-          <div className="p-12 text-center border border-dashed border-slate-800 rounded-2xl text-slate-500 text-xs">
-            {isLiveCapturing ? 'Waiting for first screen capture...' : 'No screens match the selected filters.'}
+          <div className="bg-[#0C0D0D] rounded-[24px] p-12 text-center text-[16px] leading-[24px] text-[#7E7E81]">
+            {isLiveCapturing ? 'Waiting for first screen capture...' : 'No screens match the active filters.'}
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {filteredScreens.map((s, idx) => (
               <div
                 key={s.id}
-                className="group rounded-2xl bg-slate-900/60 border border-slate-800 hover:border-slate-700 overflow-hidden flex flex-col transition shadow-lg hover:shadow-2xl"
+                onClick={() => openScreenLightbox(idx)}
+                className="group bg-[#0C0D0D] rounded-[24px] p-6 flex flex-col gap-4 border border-transparent hover:border-[#242628] transition cursor-pointer"
               >
-                <div
-                  className="relative bg-slate-950/80 overflow-hidden cursor-pointer aspect-video flex items-start justify-center border-b border-slate-800/80"
-                  onClick={() => openScreenLightbox(idx)}
-                >
+                {/* Thumbnail Preview (#30:225 — EL-cde1ee1c) */}
+                <div className="relative bg-[#1D1D1E] rounded-[12px] h-[258px] overflow-hidden flex items-start justify-center">
                   <img
                     src={s.url}
                     alt={s.route_path}
-                    className="w-full object-cover object-top transition duration-300 group-hover:scale-[1.02]"
+                    className="w-full h-full object-cover object-top transition duration-300 group-hover:scale-[1.02]"
                     loading="lazy"
                   />
-                  <div className="absolute inset-0 bg-black/0 group-hover:bg-black/35 transition flex items-center justify-center opacity-0 group-hover:opacity-100 gap-2">
-                    <span className="px-3 py-1.5 rounded-lg bg-slate-900/90 text-white text-xs font-medium flex items-center gap-1.5 border border-slate-700 backdrop-blur-sm shadow-lg">
-                      <Eye size={14} />
-                      Inspect / Zoom
-                    </span>
-                  </div>
                 </div>
 
-                <div className="p-4 flex items-center justify-between text-xs">
-                  <div>
-                    <div className="font-mono font-semibold text-slate-200">{s.route_path}</div>
-                    <div className="text-[11px] text-slate-500 flex items-center gap-2 mt-0.5">
-                      <span className="capitalize">{s.viewport_label}</span>
-                      <span>•</span>
-                      <span>{s.width}×{s.height}</span>
-                      <span>•</span>
-                      <span className="capitalize">{s.capture_type.replace('_', ' ')}</span>
-                    </div>
+                {/* Page Title & Metadata (#30:226 — EL-e03b43ef) */}
+                <div className="px-3 flex flex-col gap-2">
+                  <div className="text-[16px] leading-[24px] text-white font-normal truncate">
+                    {formatRouteTitle(s.route_path)}
                   </div>
-
-                  <div className="flex items-center gap-2">
-                    {onRecapture && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onRecapture([s.route_path]);
-                        }}
-                        className="p-1.5 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-400 hover:text-emerald-400 transition"
-                        title="Recapture this page"
-                      >
-                        <RefreshCw size={13} />
-                      </button>
-                    )}
-
-                    <span className={`px-2 py-0.5 rounded-md font-mono text-[10px] border ${
-                      s.theme === 'dark' ? 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20' : 'bg-amber-500/10 text-amber-400 border-amber-500/20'
-                    }`}>
-                      {s.theme}
-                    </span>
+                  <div className="flex items-center gap-2 text-[16px] leading-[24px] text-[#7E7E81] flex-wrap">
+                    <span className="capitalize">{s.viewport_label}</span>
+                    <span>{s.width}×{s.height}</span>
+                    <span className="capitalize">{s.theme}</span>
                   </div>
                 </div>
               </div>
@@ -509,55 +648,38 @@ export const StudioGallery: React.FC<StudioGalleryProps> = ({
         )
       )}
 
-      {/* 2. SECTIONS VIEW */}
+      {/* B. SECTIONS GRID */}
       {activeTab === 'sections' && (
         filteredSections.length === 0 ? (
-          <div className="p-12 text-center border border-dashed border-slate-800 rounded-2xl text-slate-500 text-xs">
-            {isLiveCapturing ? 'Waiting for semantic section slicing...' : 'No sections match the selected filters.'}
+          <div className="bg-[#0C0D0D] rounded-[24px] p-12 text-center text-[16px] leading-[24px] text-[#7E7E81]">
+            {isLiveCapturing ? 'Slicing semantic page sections...' : 'No sections match the active filters.'}
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {filteredSections.map((sec, idx) => (
               <div
                 key={sec.id}
-                className="group rounded-2xl bg-slate-900/60 border border-slate-800 hover:border-slate-700 overflow-hidden flex flex-col transition shadow-lg"
+                onClick={() => openSectionLightbox(idx)}
+                className="group bg-[#0C0D0D] rounded-[24px] p-6 flex flex-col gap-4 border border-transparent hover:border-[#242628] transition cursor-pointer"
               >
-                <div
-                  className="relative bg-slate-950/80 overflow-hidden cursor-pointer aspect-[16/10] flex items-center justify-center border-b border-slate-800/80 p-2"
-                  onClick={() => openSectionLightbox(idx)}
-                >
+                <div className="relative bg-[#1D1D1E] rounded-[12px] h-[258px] overflow-hidden flex items-center justify-center p-3">
                   <img
                     src={sec.url}
                     alt={sec.section_category}
-                    className="max-h-full max-w-full object-contain rounded transition group-hover:scale-[1.02]"
+                    className="max-h-full max-w-full object-contain rounded-[8px] transition duration-300 group-hover:scale-[1.02]"
                     loading="lazy"
                   />
-                  <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition flex items-center justify-center opacity-0 group-hover:opacity-100">
-                    <span className="px-3 py-1.5 rounded-lg bg-slate-900/90 text-white text-xs font-medium flex items-center gap-1.5 border border-slate-700 backdrop-blur-sm">
-                      <Eye size={14} />
-                      Inspect / Zoom
-                    </span>
-                  </div>
                 </div>
 
-                <div className="p-4 flex items-center justify-between text-xs">
-                  <div>
-                    <div className="font-bold text-slate-100 capitalize flex items-center gap-2">
-                      <span>{sec.section_category}</span>
-                      <span className="px-1.5 py-0.2 rounded bg-slate-800 text-[10px] text-slate-400 font-mono">
-                        {sec.width}×{sec.height}
-                      </span>
-                    </div>
-                    <div className="text-[11px] text-slate-500 font-mono mt-0.5">{sec.route_path}</div>
+                <div className="px-3 flex flex-col gap-2">
+                  <div className="text-[16px] leading-[24px] text-white font-normal capitalize truncate">
+                    {sec.section_category}
                   </div>
-
-                  <button
-                    onClick={() => openSectionLightbox(idx)}
-                    className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition"
-                    title="Zoom"
-                  >
-                    <Eye size={14} />
-                  </button>
+                  <div className="flex items-center gap-2 text-[16px] leading-[24px] text-[#7E7E81] flex-wrap">
+                    <span>{sec.route_path}</span>
+                    <span>{sec.width}×{sec.height}</span>
+                    <span className="capitalize">{sec.theme}</span>
+                  </div>
                 </div>
               </div>
             ))}
@@ -565,34 +687,37 @@ export const StudioGallery: React.FC<StudioGalleryProps> = ({
         )
       )}
 
-      {/* 3. MODALS & DRAWERS VIEW */}
+      {/* C. MODALS GRID */}
       {activeTab === 'modals' && (
         modals.length === 0 ? (
-          <div className="p-12 text-center border border-dashed border-slate-800 rounded-2xl text-slate-500 text-xs">
-            {isLiveCapturing ? 'Exploring interactive modals & drawers...' : 'No interactive modals or drawers were triggered on the crawled routes.'}
+          <div className="bg-[#0C0D0D] rounded-[24px] p-12 text-center text-[16px] leading-[24px] text-[#7E7E81]">
+            No interactive modals or drawers were triggered on the crawled routes.
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {modals.map((m, idx) => (
               <div
                 key={m.id}
-                className="group rounded-2xl bg-slate-900/60 border border-slate-800 hover:border-slate-700 overflow-hidden flex flex-col transition shadow-lg"
+                onClick={() => openModalLightbox(idx)}
+                className="group bg-[#0C0D0D] rounded-[24px] p-6 flex flex-col gap-4 border border-transparent hover:border-[#242628] transition cursor-pointer"
               >
-                <div
-                  className="relative bg-slate-950/80 overflow-hidden cursor-pointer aspect-video flex items-center justify-center border-b border-slate-800/80 p-4"
-                  onClick={() => openModalLightbox(idx)}
-                >
-                  <img src={m.url} alt="Modal State" className="max-h-full max-w-full object-contain rounded" loading="lazy" />
-                  <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition flex items-center justify-center opacity-0 group-hover:opacity-100">
-                    <span className="px-3 py-1.5 rounded-lg bg-slate-900/90 text-white text-xs font-medium flex items-center gap-1.5 border border-slate-700 backdrop-blur-sm">
-                      <Eye size={14} />
-                      Inspect / Zoom
-                    </span>
-                  </div>
+                <div className="relative bg-[#1D1D1E] rounded-[12px] h-[258px] overflow-hidden flex items-center justify-center p-3">
+                  <img
+                    src={m.url}
+                    alt={m.section_category}
+                    className="max-h-full max-w-full object-contain rounded-[8px] transition duration-300 group-hover:scale-[1.02]"
+                    loading="lazy"
+                  />
                 </div>
-                <div className="p-4 text-xs">
-                  <div className="font-bold text-slate-100">{m.section_category.replace('modal_', 'Modal: ')}</div>
-                  <div className="text-slate-500 font-mono text-[11px] mt-0.5">{m.route_path}</div>
+
+                <div className="px-3 flex flex-col gap-2">
+                  <div className="text-[16px] leading-[24px] text-white font-normal truncate">
+                    {m.section_category.replace('modal_', 'Modal: ')}
+                  </div>
+                  <div className="flex items-center gap-2 text-[16px] leading-[24px] text-[#7E7E81]">
+                    <span>{m.route_path}</span>
+                    <span>Interactive state</span>
+                  </div>
                 </div>
               </div>
             ))}
@@ -600,47 +725,36 @@ export const StudioGallery: React.FC<StudioGalleryProps> = ({
         )
       )}
 
-      {/* 4. UI COMPONENTS VIEW */}
+      {/* D. UI COMPONENTS GRID */}
       {activeTab === 'components' && (
         filteredComponents.length === 0 ? (
-          <div className="p-12 text-center border border-dashed border-slate-800 rounded-2xl text-slate-500 text-xs">
-            {isLiveCapturing ? 'Harvesting and deduplicating UI components...' : 'No components match the selected category.'}
+          <div className="bg-[#0C0D0D] rounded-[24px] p-12 text-center text-[16px] leading-[24px] text-[#7E7E81]">
+            {isLiveCapturing ? 'Harvesting UI components...' : 'No components match the active filter.'}
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {filteredComponents.map((c, idx) => (
               <div
                 key={c.id}
-                className="group rounded-2xl bg-slate-900/60 border border-slate-800 hover:border-slate-700 overflow-hidden flex flex-col transition shadow-lg"
+                onClick={() => setComponentIndex(idx)}
+                className="group bg-[#0C0D0D] rounded-[24px] p-6 flex flex-col gap-4 border border-transparent hover:border-[#242628] transition cursor-pointer"
               >
-                <div
-                  className="relative bg-[#0d1322] overflow-hidden cursor-pointer h-40 flex items-center justify-center border-b border-slate-800/80 p-4"
-                  onClick={() => setComponentIndex(idx)}
-                >
-                  <img src={c.url} alt={c.category} className="max-h-full max-w-full object-contain transition group-hover:scale-105" loading="lazy" />
+                <div className="relative bg-[#1D1D1E] rounded-[12px] h-[258px] overflow-hidden flex items-center justify-center p-6">
+                  <img
+                    src={c.url}
+                    alt={c.category}
+                    className="max-h-full max-w-full object-contain transition duration-300 group-hover:scale-105"
+                    loading="lazy"
+                  />
                 </div>
 
-                <div className="p-3.5 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[10px] font-semibold uppercase tracking-wider">
-                      {c.category}
-                    </span>
-                    <span className="px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 font-mono text-[11px] font-medium border border-slate-700">
-                      Used {c.instances_count}x
-                    </span>
+                <div className="px-3 flex flex-col gap-2">
+                  <div className="text-[16px] leading-[24px] text-white font-normal capitalize truncate">
+                    {c.category}
                   </div>
-
-                  <div className="flex items-center justify-between pt-1">
-                    <div className="font-mono text-[10px] text-slate-500 truncate max-w-[130px]">
-                      fp:{c.fingerprint}
-                    </div>
-                    <button
-                      onClick={() => setComponentIndex(idx)}
-                      className="text-xs text-emerald-400 hover:text-emerald-300 font-medium flex items-center gap-1 transition cursor-pointer"
-                    >
-                      <Code size={13} />
-                      <span>Inspect</span>
-                    </button>
+                  <div className="flex items-center gap-2 text-[16px] leading-[24px] text-[#7E7E81] flex-wrap">
+                    <span>Used {c.instances_count}x</span>
+                    <span className="font-mono text-[14px]">fp:{c.fingerprint}</span>
                   </div>
                 </div>
               </div>
@@ -649,109 +763,103 @@ export const StudioGallery: React.FC<StudioGalleryProps> = ({
         )
       )}
 
-      {/* 5. DESIGN TOKENS VIEW */}
+      {/* E. DESIGN TOKENS VIEW */}
       {activeTab === 'tokens' && (
         <TokenInspector tokens={tokens} />
       )}
 
-      {/* Interactive Lightbox Modal with Zoom & Navigation */}
+      {/* Interactive Lightbox Modal */}
       {currentLightboxItem && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-md p-4"
           onClick={() => setLightboxIndex(null)}
         >
           <div
-            className="relative w-full max-w-6xl max-h-[92vh] flex flex-col bg-slate-950 border border-slate-800 rounded-3xl overflow-hidden shadow-2xl"
+            className="relative w-full max-w-6xl max-h-[92vh] flex flex-col bg-[#0C0D0D] border border-[#242628] rounded-[24px] overflow-hidden shadow-2xl"
             onClick={(e) => e.stopPropagation()}
             onWheel={handleWheel}
           >
             {/* Lightbox Toolbar */}
-            <div className="flex items-center justify-between px-6 py-3.5 border-b border-slate-800 bg-slate-900/70 backdrop-blur-md">
-              <div className="flex items-center gap-3">
-                <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-400 font-mono text-[11px]">
-                  {lightboxIndex! + 1} of {lightboxItems.length}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-[#242628] bg-[#131415]">
+              <div className="flex items-center gap-3 min-w-0">
+                <span className="px-2.5 py-1 rounded-[8px] bg-[#252627] text-[#7E7E81] font-mono text-[12px]">
+                  {lightboxIndex! + 1} / {lightboxItems.length}
                 </span>
-                <span className="font-mono font-semibold text-slate-100 text-sm truncate max-w-xs md:max-w-md">
+                <span className="text-[16px] leading-[24px] text-white font-medium truncate">
                   {currentLightboxItem.title}
                 </span>
                 {currentLightboxItem.subtitle && (
-                  <span className="text-[11px] text-slate-400 font-mono hidden sm:inline">
-                    • {currentLightboxItem.subtitle}
+                  <span className="text-[14px] text-[#7E7E81] hidden sm:inline">
+                    {currentLightboxItem.subtitle}
                   </span>
                 )}
               </div>
 
-              {/* Controls */}
               <div className="flex items-center gap-2">
-                {/* Zoom Controls */}
-                <div className="flex items-center rounded-xl bg-slate-900 border border-slate-800 p-0.5 text-slate-300">
+                <div className="flex items-center rounded-[12px] bg-[#1D1D1E] border border-[#242628] p-1 text-white">
                   <button
                     onClick={() => setZoomLevel((z) => Math.max(0.5, +(z - 0.25).toFixed(2)))}
-                    className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition"
+                    className="p-1.5 hover:bg-[#242628] rounded-[8px] text-[#7E7E81] hover:text-white transition"
                     title="Zoom Out (-)"
                   >
                     <ZoomOut size={15} />
                   </button>
                   <button
                     onClick={() => { setZoomLevel(1.0); setIsFitMode(true); }}
-                    className="px-2 py-0.5 text-[11px] font-mono hover:text-white transition"
+                    className="px-2.5 py-0.5 text-[12px] font-mono text-white"
                     title="Reset Zoom (0)"
                   >
                     {Math.round(zoomLevel * 100)}%
                   </button>
                   <button
                     onClick={() => setZoomLevel((z) => Math.min(4.0, +(z + 0.25).toFixed(2)))}
-                    className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition"
+                    className="p-1.5 hover:bg-[#242628] rounded-[8px] text-[#7E7E81] hover:text-white transition"
                     title="Zoom In (+)"
                   >
                     <ZoomIn size={15} />
                   </button>
                 </div>
 
-                {/* Fit vs Actual Size Toggle */}
                 <button
                   onClick={() => setIsFitMode(!isFitMode)}
-                  className={`p-2 rounded-xl border text-xs font-medium flex items-center gap-1 transition ${
+                  className={`p-2.5 rounded-[12px] border text-xs transition ${
                     isFitMode
-                      ? 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
-                      : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
+                      ? 'bg-[#1D1D1E] border-[#242628] text-[#7E7E81] hover:text-white'
+                      : 'bg-white border-white text-[#262627]'
                   }`}
-                  title={isFitMode ? 'Inspect Actual Width (Scrollable)' : 'Fit to Window'}
+                  title={isFitMode ? 'Actual size' : 'Fit to window'}
                 >
                   {isFitMode ? <Maximize2 size={15} /> : <Minimize2 size={15} />}
                 </button>
 
-                {/* Quick Recapture */}
                 {onRecapture && currentLightboxItem.route_path && (
                   <button
                     onClick={() => {
                       onRecapture([currentLightboxItem.route_path!]);
                       setLightboxIndex(null);
                     }}
-                    className="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-200 text-xs font-medium flex items-center gap-1.5 transition"
-                    title="Recapture Page"
+                    className="px-3.5 py-2 rounded-[12px] border border-[#242628] hover:bg-[#242628] text-white text-[14px] flex items-center gap-2 transition"
+                    title="Recapture this route"
                   >
-                    <RefreshCw size={13} className="text-emerald-400" />
+                    <img src="/assets/figma/icon-refresh.svg" width={18} height={18} alt="" />
                     <span className="hidden sm:inline">Recapture</span>
                   </button>
                 )}
 
-                {/* Download PNG */}
                 <a
                   href={currentLightboxItem.url}
                   download
                   target="_blank"
                   rel="noreferrer"
-                  className="p-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-400 hover:text-white transition"
+                  className="p-2.5 rounded-[12px] border border-[#242628] hover:bg-[#242628] text-[#7E7E81] hover:text-white transition"
                   title="Download PNG"
                 >
                   <Download size={15} />
                 </a>
 
-                {/* Close Button */}
                 <button
                   onClick={() => setLightboxIndex(null)}
-                  className="p-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-400 hover:text-white transition"
+                  className="p-2.5 rounded-[12px] border border-[#242628] hover:bg-[#242628] text-[#7E7E81] hover:text-white transition"
                   title="Close (Esc)"
                 >
                   <X size={15} />
@@ -759,37 +867,32 @@ export const StudioGallery: React.FC<StudioGalleryProps> = ({
               </div>
             </div>
 
-            {/* Lightbox Image Area with Scroll & Pan */}
-            <div className="relative flex-1 overflow-auto bg-[#070A11] p-4 flex items-center justify-center min-h-[50vh]">
-              {/* Previous Button */}
+            {/* Lightbox Canvas */}
+            <div className="relative flex-1 overflow-auto bg-[#0C0D0D] p-6 flex items-center justify-center min-h-[55vh]">
               {lightboxItems.length > 1 && (
                 <button
                   onClick={() => {
                     setLightboxIndex((prev) => (prev !== null ? (prev - 1 + lightboxItems.length) % lightboxItems.length : 0));
                     setZoomLevel(1.0);
                   }}
-                  className="absolute left-4 top-1/2 -translate-y-1/2 p-3 rounded-full bg-slate-900/80 hover:bg-slate-800 text-white border border-slate-700/80 shadow-2xl backdrop-blur-md transition z-20 cursor-pointer"
-                  title="Previous (ArrowLeft)"
+                  className="absolute left-6 top-1/2 -translate-y-1/2 p-3 rounded-full bg-[#1D1D1E] hover:bg-[#242628] text-white border border-[#242628] shadow-2xl transition z-20 cursor-pointer"
                 >
                   <ChevronLeft size={20} />
                 </button>
               )}
 
-              {/* Next Button */}
               {lightboxItems.length > 1 && (
                 <button
                   onClick={() => {
                     setLightboxIndex((prev) => (prev !== null ? (prev + 1) % lightboxItems.length : 0));
                     setZoomLevel(1.0);
                   }}
-                  className="absolute right-4 top-1/2 -translate-y-1/2 p-3 rounded-full bg-slate-900/80 hover:bg-slate-800 text-white border border-slate-700/80 shadow-2xl backdrop-blur-md transition z-20 cursor-pointer"
-                  title="Next (ArrowRight)"
+                  className="absolute right-6 top-1/2 -translate-y-1/2 p-3 rounded-full bg-[#1D1D1E] hover:bg-[#242628] text-white border border-[#242628] shadow-2xl transition z-20 cursor-pointer"
                 >
                   <ChevronRight size={20} />
                 </button>
               )}
 
-              {/* Rendered Image */}
               <div
                 className={`transition-transform duration-150 ${
                   isFitMode ? 'flex items-center justify-center' : 'w-full flex justify-center'
@@ -811,83 +914,63 @@ export const StudioGallery: React.FC<StudioGalleryProps> = ({
                       setIsFitMode(true);
                     }
                   }}
-                  className={`rounded-lg shadow-2xl transition duration-150 cursor-pointer ${
+                  className={`rounded-[12px] shadow-2xl transition duration-150 cursor-pointer ${
                     zoomLevel > 1.0 ? 'cursor-zoom-out' : 'cursor-zoom-in'
                   } ${
-                    isFitMode ? 'max-h-[78vh] max-w-full object-contain' : 'w-full max-w-5xl h-auto'
+                    isFitMode ? 'max-h-[75vh] max-w-full object-contain' : 'w-full max-w-5xl h-auto'
                   }`}
-                  title={zoomLevel > 1.0 ? 'Click to reset zoom (100%)' : 'Click to zoom in'}
                 />
-              </div>
-            </div>
-
-            {/* Bottom Keyboard Hint Bar */}
-            <div className="px-6 py-2 border-t border-slate-800/80 bg-slate-950 flex items-center justify-between text-[11px] text-slate-500 font-mono">
-              <div className="flex items-center gap-3">
-                <span>← → : Navigate</span>
-                <span>•</span>
-                <span>+ - : Zoom</span>
-                <span>•</span>
-                <span>0 : Reset</span>
-                <span>•</span>
-                <span>Esc : Close</span>
-              </div>
-              <div>
-                Ctrl+Wheel to zoom seamlessly
               </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* Component Inspector Modal with Navigation */}
+      {/* Component Inspector Modal */}
       {currentComponent && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-sm p-4"
           onClick={() => setComponentIndex(null)}
         >
           <div
-            className="w-full max-w-xl bg-[#111827] border border-slate-800 rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[88vh]"
+            className="w-full max-w-[600px] bg-[#0C0D0D] border border-[#242628] rounded-[24px] p-6 md:p-8 shadow-2xl overflow-hidden flex flex-col gap-6 max-h-[88vh]"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 bg-slate-900/50">
-              <div className="flex items-center gap-2">
-                <Box size={18} className="text-emerald-400" />
-                <h3 className="font-bold text-white text-sm capitalize">
-                  {currentComponent.category} Component Inspector
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <h3 className="text-[22px] leading-[28px] font-bold text-white capitalize">
+                  {currentComponent.category}
                 </h3>
-                <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-400 font-mono text-[11px]">
-                  {componentIndex! + 1} of {filteredComponents.length}
+                <span className="px-2.5 py-1 rounded-[8px] bg-[#252627] text-[#7E7E81] font-mono text-[12px]">
+                  {componentIndex! + 1} / {filteredComponents.length}
                 </span>
               </div>
               <button
                 onClick={() => setComponentIndex(null)}
-                className="p-1 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition"
+                className="p-2 text-[#7E7E81] hover:text-white rounded-[12px] hover:bg-[#242628] transition"
               >
-                <X size={16} />
+                <X size={18} />
               </button>
             </div>
 
-            <div className="p-6 overflow-y-auto space-y-5">
-              <div className="p-6 rounded-2xl bg-slate-950 border border-slate-800/80 flex items-center justify-center relative">
-                <img src={currentComponent.url} alt="Component" className="max-h-40 object-contain" />
+            <div className="overflow-y-auto flex flex-col gap-6 pr-1">
+              <div className="p-8 rounded-[12px] bg-[#1D1D1E] flex items-center justify-center">
+                <img src={currentComponent.url} alt="Component" className="max-h-44 object-contain" />
               </div>
 
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-slate-400">Instances across site:</span>
-                <span className="font-bold text-white font-mono">{currentComponent.instances_count} times</span>
+              <div className="flex items-center justify-between text-[15px] text-[#7E7E81] px-1">
+                <span>Detected instances across site</span>
+                <span className="text-white font-mono">{currentComponent.instances_count}x</span>
               </div>
 
               {currentComponent.computed_styles && (
-                <div>
-                  <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">
-                    Extracted Computed Styles
-                  </h4>
-                  <div className="grid grid-cols-2 gap-2 text-xs font-mono">
+                <div className="flex flex-col gap-3">
+                  <span className="text-[14px] text-[#7E7E81]">Computed CSS properties</span>
+                  <div className="grid grid-cols-2 gap-2.5 font-mono text-[13px]">
                     {Object.entries(currentComponent.computed_styles).map(([key, val]) => (
-                      <div key={key} className="p-2.5 rounded-xl bg-slate-900/60 border border-slate-800/80">
-                        <span className="text-slate-500 block text-[10px]">{key}</span>
-                        <span className="text-slate-200 truncate block">{val || 'none'}</span>
+                      <div key={key} className="p-3 rounded-[12px] bg-[#131415] border border-[#242628]">
+                        <span className="text-[#7E7E81] block text-[11px]">{key}</span>
+                        <span className="text-white truncate block mt-0.5">{val || 'none'}</span>
                       </div>
                     ))}
                   </div>
@@ -895,13 +978,11 @@ export const StudioGallery: React.FC<StudioGalleryProps> = ({
               )}
 
               {currentComponent.routes && (
-                <div>
-                  <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">
-                    Routes Appearing In
-                  </h4>
-                  <div className="flex flex-wrap gap-1.5 font-mono text-xs">
+                <div className="flex flex-col gap-2">
+                  <span className="text-[14px] text-[#7E7E81]">Appears on routes</span>
+                  <div className="flex flex-wrap gap-2 font-mono text-[13px]">
                     {currentComponent.routes.map((r) => (
-                      <span key={r} className="px-2.5 py-1 rounded-lg bg-slate-900 border border-slate-800 text-slate-300">
+                      <span key={r} className="px-3 py-1.5 rounded-[10px] bg-[#252627] text-white">
                         {r}
                       </span>
                     ))}
@@ -910,138 +991,128 @@ export const StudioGallery: React.FC<StudioGalleryProps> = ({
               )}
             </div>
 
-            <div className="px-6 py-4 border-t border-slate-800 bg-slate-900/40 flex items-center justify-between">
-              <div className="text-[11px] text-slate-500 font-mono">
-                Use ← → keys to browse components
-              </div>
+            <div className="pt-4 border-t border-[#242628] flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => setComponentIndex((prev) => (prev !== null ? (prev - 1 + filteredComponents.length) % filteredComponents.length : 0))}
-                  className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-slate-300 rounded-xl text-xs font-medium border border-slate-800"
+                  className="px-4 py-2 rounded-[12px] border border-[#242628] hover:bg-[#242628] text-white text-[14px]"
                 >
                   Previous
                 </button>
                 <button
                   onClick={() => setComponentIndex((prev) => (prev !== null ? (prev + 1) % filteredComponents.length : 0))}
-                  className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-slate-300 rounded-xl text-xs font-medium border border-slate-800"
+                  className="px-4 py-2 rounded-[12px] border border-[#242628] hover:bg-[#242628] text-white text-[14px]"
                 >
                   Next
                 </button>
-                <button
-                  onClick={() => setComponentIndex(null)}
-                  className="px-4 py-1.5 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold rounded-xl text-xs"
-                >
-                  Done
-                </button>
               </div>
+              <button
+                onClick={() => setComponentIndex(null)}
+                className="px-5 py-2 bg-white hover:bg-white/90 text-[#262627] font-medium rounded-[12px] text-[14px]"
+              >
+                Done
+              </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Multi-Page Recapture Modal */}
+      {/* Recapture Routes Modal */}
       {isRecaptureModalOpen && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4"
           onClick={() => setIsRecaptureModalOpen(false)}
         >
           <div
-            className="w-full max-w-lg bg-[#111827] border border-slate-800 rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh]"
+            className="w-full max-w-[520px] bg-[#0C0D0D] border border-[#242628] rounded-[24px] p-6 md:p-8 shadow-2xl overflow-hidden flex flex-col gap-6 max-h-[85vh]"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 bg-slate-900/50">
-              <div className="flex items-center gap-2">
-                <RefreshCw size={18} className="text-emerald-400" />
-                <h3 className="font-bold text-white text-sm">
-                  Recapture Specific Pages
-                </h3>
+            <div className="flex items-center justify-between">
+              <div className="flex flex-col gap-1">
+                <h3 className="text-[22px] leading-[28px] font-bold text-white">Recapture routes</h3>
+                <p className="text-[14px] text-[#7E7E81]">Select pages to re-crawl and update in place.</p>
               </div>
               <button
                 onClick={() => setIsRecaptureModalOpen(false)}
-                className="p-1 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition"
+                className="p-2 text-[#7E7E81] hover:text-white rounded-[12px] hover:bg-[#242628] transition"
               >
-                <X size={16} />
+                <X size={18} />
               </button>
             </div>
 
-            <div className="p-6 overflow-y-auto space-y-4">
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-slate-400">Select which pages to recapture and re-slice:</span>
-                <div className="flex items-center gap-2">
+            <div className="flex flex-col gap-3 overflow-y-auto">
+              <div className="flex items-center justify-between text-[13px] text-[#7E7E81]">
+                <span>{Object.values(selectedRecaptureRoutes).filter(Boolean).length} selected</span>
+                <div className="flex items-center gap-3">
                   <button
                     onClick={() => {
                       const all: Record<string, boolean> = {};
                       allUniqueRoutes.forEach((r) => { all[r] = true; });
                       setSelectedRecaptureRoutes(all);
                     }}
-                    className="text-emerald-400 hover:underline"
+                    className="text-white hover:underline cursor-pointer"
                   >
-                    Select All
+                    Select all
                   </button>
-                  <span>•</span>
                   <button
                     onClick={() => setSelectedRecaptureRoutes({})}
-                    className="text-slate-400 hover:underline"
+                    className="text-[#7E7E81] hover:text-white cursor-pointer"
                   >
-                    Deselect All
+                    Clear
                   </button>
                 </div>
               </div>
 
-              <div className="space-y-1.5 max-h-60 overflow-y-auto divide-y divide-slate-800/60 bg-slate-950 p-2 rounded-2xl border border-slate-800">
+              <div className="flex flex-col gap-1.5 max-h-60 overflow-y-auto bg-[#131415] p-2.5 rounded-[16px] border border-[#242628]">
                 {allUniqueRoutes.map((route) => {
                   const isChecked = !!selectedRecaptureRoutes[route];
                   return (
-                    <div
+                    <button
                       key={route}
-                      className="flex items-center justify-between p-2.5 hover:bg-slate-900/40 rounded-xl cursor-pointer text-xs"
                       onClick={() => {
                         setSelectedRecaptureRoutes((prev) => ({
                           ...prev,
                           [route]: !prev[route],
                         }));
                       }}
+                      className="flex items-center justify-between p-3 hover:bg-[#1D1D1E] rounded-[12px] text-left transition cursor-pointer"
                     >
-                      <div className="flex items-center gap-2.5 font-mono text-slate-200">
-                        {isChecked ? (
-                          <CheckSquare size={16} className="text-emerald-400" />
-                        ) : (
-                          <Square size={16} className="text-slate-500" />
-                        )}
+                      <div className="flex items-center gap-3 font-mono text-[14px] text-white">
+                        <div
+                          className={`w-5 h-5 rounded-[6px] flex items-center justify-center ${
+                            isChecked ? 'bg-white text-[#262627]' : 'border border-[#7E7E81]'
+                          }`}
+                        >
+                          {isChecked && <Check size={13} strokeWidth={3} />}
+                        </div>
                         <span>{route}</span>
                       </div>
-                    </div>
+                    </button>
                   );
                 })}
               </div>
             </div>
 
-            <div className="px-6 py-4 border-t border-slate-800 bg-slate-900/40 flex items-center justify-between">
-              <span className="text-xs text-slate-400">
-                {Object.values(selectedRecaptureRoutes).filter(Boolean).length} route(s) selected
-              </span>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setIsRecaptureModalOpen(false)}
-                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleExecuteRecapture}
-                  disabled={Object.values(selectedRecaptureRoutes).filter(Boolean).length === 0}
-                  className="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-40 text-slate-950 font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-lg shadow-emerald-500/20"
-                >
-                  <RefreshCw size={13} />
-                  <span>Start Recapture</span>
-                </button>
-              </div>
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                onClick={() => setIsRecaptureModalOpen(false)}
+                className="px-4 py-2.5 rounded-[12px] border border-[#242628] hover:bg-[#242628] text-white text-[14px] cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleExecuteRecapture}
+                disabled={Object.values(selectedRecaptureRoutes).filter(Boolean).length === 0}
+                className="px-5 py-2.5 rounded-[12px] bg-white hover:bg-white/90 disabled:opacity-40 text-[#262627] text-[14px] font-medium cursor-pointer"
+              >
+                Recapture selected
+              </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Export Drawer */}
+      {/* Export Drawer Modal */}
       <ExportDrawer
         isOpen={isExportDrawerOpen}
         onClose={() => setIsExportDrawerOpen(false)}

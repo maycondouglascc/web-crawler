@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Palette, Type, Square, Layers, Copy, Check } from 'lucide-react';
+import { Copy, Check } from 'lucide-react';
 
 interface TokenItem {
   id: string;
@@ -27,113 +27,145 @@ export const TokenInspector: React.FC<TokenInspectorProps> = ({ tokens }) => {
     setTimeout(() => setCopiedVal(null), 1500);
   };
 
-  return (
-    <div className="space-y-8">
-      {/* 1. Color Palette */}
-      <div className="space-y-4">
-        <div className="flex items-center gap-2">
-          <Palette size={18} className="text-emerald-400" />
-          <h3 className="text-base font-bold text-white">Extracted Color Palette</h3>
-          <span className="text-xs text-slate-500 font-mono">({colors.length} tokens)</span>
-        </div>
+  if (tokens.length === 0) {
+    return (
+      <div className="bg-[#0C0D0D] rounded-[24px] p-12 text-center text-[16px] leading-[24px] text-[#7E7E81]">
+        No design tokens extracted for this crawl yet.
+      </div>
+    );
+  }
 
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
-          {colors.map((c) => (
-            <div
-              key={c.id}
-              onClick={() => copyToClipboard(c.value)}
-              className="group p-3 rounded-2xl bg-slate-900/60 border border-slate-800 hover:border-slate-700 cursor-pointer transition shadow-md flex flex-col justify-between"
-            >
+  return (
+    <div className="flex flex-col gap-10">
+      {/* 1. Color Palette — Matching Figma 3-column / 4-column Card Language */}
+      {colors.length > 0 && (
+        <div className="flex flex-col gap-6">
+          <div className="flex items-baseline justify-between">
+            <h3 className="text-[24px] leading-[32px] font-bold text-white">Colors</h3>
+            <span className="text-[16px] leading-[24px] text-[#7E7E81]">{colors.length} tokens</span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+            {colors.map((c) => (
               <div
-                className="w-full h-16 rounded-xl border border-white/10 shadow-inner mb-3 transition group-hover:scale-[1.03]"
-                style={{ backgroundColor: c.value }}
-              />
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="font-mono text-xs font-semibold text-slate-200">{c.value}</div>
-                  <div className="text-[10px] text-slate-500 capitalize">{c.name} • {c.usage_count}x</div>
-                </div>
-                <div className="text-slate-500 group-hover:text-emerald-400 transition">
-                  {copiedVal === c.value ? <Check size={14} className="text-emerald-400" /> : <Copy size={13} />}
+                key={c.id}
+                onClick={() => copyToClipboard(c.value)}
+                className="group bg-[#0C0D0D] rounded-[24px] p-6 flex flex-col gap-4 border border-transparent hover:border-[#242628] cursor-pointer transition"
+              >
+                <div
+                  className="w-full h-[140px] rounded-[12px] border border-white/10 transition group-hover:scale-[1.01]"
+                  style={{ backgroundColor: c.value }}
+                />
+                <div className="px-3 flex items-center justify-between gap-2">
+                  <div className="flex flex-col gap-1">
+                    <span className="font-mono text-[16px] leading-[24px] text-white">{c.value}</span>
+                    <div className="flex items-center gap-2 text-[14px] leading-[20px] text-[#7E7E81]">
+                      <span className="capitalize">{c.name}</span>
+                      <span>•</span>
+                      <span>{c.usage_count}x</span>
+                    </div>
+                  </div>
+                  <div className="text-[#7E7E81] group-hover:text-white transition">
+                    {copiedVal === c.value ? <Check size={16} className="text-white" /> : <Copy size={16} />}
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* 2. Typography Scale */}
-      <div className="space-y-4">
-        <div className="flex items-center gap-2">
-          <Type size={18} className="text-emerald-400" />
-          <h3 className="text-base font-bold text-white">Typography Scale</h3>
-        </div>
+      {typography.length > 0 && (
+        <div className="flex flex-col gap-6">
+          <div className="flex items-baseline justify-between">
+            <h3 className="text-[24px] leading-[32px] font-bold text-white">Typography</h3>
+            <span className="text-[16px] leading-[24px] text-[#7E7E81]">{typography.length} styles</span>
+          </div>
 
-        <div className="rounded-2xl bg-slate-900/60 border border-slate-800 overflow-hidden divide-y divide-slate-800/80">
-          {typography.map((t) => (
-            <div key={t.id} className="p-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
-              <div className="flex items-center gap-3">
-                <span className="px-2.5 py-1 rounded-lg bg-slate-800 text-xs font-mono font-bold text-emerald-400 uppercase">
-                  {t.name}
-                </span>
-                <span className="text-sm font-semibold text-slate-100">
-                  The quick brown fox jumps over the lazy dog
-                </span>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {typography.map((t) => (
+              <div
+                key={t.id}
+                onClick={() => copyToClipboard(t.value)}
+                className="bg-[#0C0D0D] rounded-[24px] p-6 flex flex-col justify-between gap-4 border border-transparent hover:border-[#242628] cursor-pointer transition"
+              >
+                <div className="bg-[#1D1D1E] rounded-[12px] p-6 flex items-center justify-between">
+                  <span className="text-[20px] leading-[28px] text-white font-medium truncate">
+                    Aa Bb Cc — {t.name}
+                  </span>
+                  <span className="text-[#7E7E81] shrink-0 ml-3">
+                    {copiedVal === t.value ? <Check size={16} className="text-white" /> : <Copy size={16} />}
+                  </span>
+                </div>
+
+                <div className="px-3 flex flex-col gap-1">
+                  <span className="text-[16px] leading-[24px] text-white">{t.name}</span>
+                  <span className="font-mono text-[14px] leading-[20px] text-[#7E7E81]">{t.value}</span>
+                </div>
               </div>
-              <div className="font-mono text-xs text-slate-400 bg-slate-950 px-3 py-1.5 rounded-lg border border-slate-800">
-                {t.value}
-              </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* 3. Border Radii & Box Shadows */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Radii */}
-        <div className="space-y-4">
-          <div className="flex items-center gap-2">
-            <Square size={18} className="text-emerald-400" />
-            <h3 className="text-base font-bold text-white">Border Radii</h3>
-          </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-            {radii.map((r) => (
-              <div
-                key={r.id}
-                className="p-4 rounded-2xl bg-slate-900/60 border border-slate-800 flex flex-col items-center justify-center text-center gap-3"
-              >
-                <div
-                  className="w-12 h-12 bg-emerald-500/10 border-2 border-emerald-500/40"
-                  style={{ borderRadius: r.value }}
-                />
-                <span className="font-mono text-xs text-slate-300 font-semibold">{r.value}</span>
+      {(radii.length > 0 || shadows.length > 0) && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {radii.length > 0 && (
+            <div className="bg-[#0C0D0D] rounded-[24px] p-6 flex flex-col gap-6">
+              <div className="px-3 flex items-baseline justify-between">
+                <h3 className="text-[20px] leading-[28px] font-bold text-white">Border radii</h3>
+                <span className="text-[14px] text-[#7E7E81]">{radii.length} tokens</span>
               </div>
-            ))}
-          </div>
-        </div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                {radii.map((r) => (
+                  <div
+                    key={r.id}
+                    onClick={() => copyToClipboard(r.value)}
+                    className="bg-[#1D1D1E] hover:bg-[#242628] rounded-[12px] p-5 flex flex-col items-center justify-center gap-3 cursor-pointer transition"
+                  >
+                    <div
+                      className="w-12 h-12 bg-[#0C0D0D] border border-white/40"
+                      style={{ borderRadius: r.value }}
+                    />
+                    <span className="font-mono text-[14px] text-white">{r.value}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
-        {/* Shadows */}
-        <div className="space-y-4">
-          <div className="flex items-center gap-2">
-            <Layers size={18} className="text-emerald-400" />
-            <h3 className="text-base font-bold text-white">Box Shadows</h3>
-          </div>
-          <div className="space-y-3">
-            {shadows.map((s, idx) => (
-              <div
-                key={s.id}
-                className="p-4 rounded-2xl bg-slate-900/60 border border-slate-800 flex items-center justify-between text-xs"
-              >
-                <div
-                  className="w-10 h-10 rounded-lg bg-slate-800"
-                  style={{ boxShadow: s.value }}
-                />
-                <div className="font-mono text-[11px] text-slate-400 truncate max-w-xs">{s.value}</div>
+          {shadows.length > 0 && (
+            <div className="bg-[#0C0D0D] rounded-[24px] p-6 flex flex-col gap-6">
+              <div className="px-3 flex items-baseline justify-between">
+                <h3 className="text-[20px] leading-[28px] font-bold text-white">Elevations & shadows</h3>
+                <span className="text-[14px] text-[#7E7E81]">{shadows.length} tokens</span>
               </div>
-            ))}
-          </div>
+              <div className="flex flex-col gap-3">
+                {shadows.map((s) => (
+                  <div
+                    key={s.id}
+                    onClick={() => copyToClipboard(s.value)}
+                    className="bg-[#1D1D1E] hover:bg-[#242628] rounded-[12px] p-4 flex items-center justify-between gap-4 cursor-pointer transition"
+                  >
+                    <div className="flex items-center gap-4 min-w-0">
+                      <div
+                        className="w-10 h-10 rounded-[8px] bg-[#252627] shrink-0 border border-white/10"
+                        style={{ boxShadow: s.value }}
+                      />
+                      <span className="font-mono text-[13px] text-[#7E7E81] truncate">{s.value}</span>
+                    </div>
+                    <span className="text-[#7E7E81] shrink-0">
+                      {copiedVal === s.value ? <Check size={15} className="text-white" /> : <Copy size={15} />}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
-      </div>
+      )}
     </div>
   );
 };

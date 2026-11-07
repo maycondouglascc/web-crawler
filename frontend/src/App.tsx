@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Camera, KeyRound, Globe, Play, Sparkles, Layers, Sliders, Shield, RefreshCw, FolderKanban } from 'lucide-react';
 import { AuthVaultModal } from './components/AuthVaultModal';
 import { DiscoveryReview } from './components/DiscoveryReview';
 import { LiveCrawlProgress } from './components/LiveCrawlProgress';
@@ -12,14 +11,39 @@ interface AuthProfile {
   cookie_count: number;
 }
 
+interface CrawlSummary {
+  run_id: string;
+  project_id: string;
+  site_name: string;
+  base_url: string;
+  status: string;
+  progress_text?: string;
+  progress_percent?: number;
+  created_at: string;
+  screens_count: number;
+  sections_count: number;
+  components_count: number;
+  tokens_count: number;
+  routes_count: number;
+  preview_url: string | null;
+}
+
 export function App() {
-  const [targetUrl, setTargetUrl] = useState('http://localhost:5173');
+  const [targetUrl, setTargetUrl] = useState('');
   const [selectedProfileId, setSelectedProfileId] = useState<string>('');
   const [profiles, setProfiles] = useState<AuthProfile[]>([]);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
 
-  // Run State
+  // Home view mode: 'new_crawl' (Wireframe - 1) or 'my_crawls' (Wireframe - 4)
+  const [homeMode, setHomeMode] = useState<'new_crawl' | 'my_crawls'>('new_crawl');
+  const [crawls, setCrawls] = useState<CrawlSummary[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [hasLoadedInitialCrawls, setHasLoadedInitialCrawls] = useState(false);
+
+  // Active Run State
   const [currentRunId, setCurrentRunId] = useState<string | null>(null);
+  const [currentSiteName, setCurrentSiteName] = useState<string>('');
+  const [currentBaseUrl, setCurrentBaseUrl] = useState<string>('');
   const [runStatus, setRunStatus] = useState<any>(null);
   const [progressText, setProgressText] = useState('');
   const [progressPercent, setProgressPercent] = useState(0);
@@ -48,27 +72,67 @@ export function App() {
     }
   };
 
+  const fetchCrawls = async () => {
+    try {
+      const res = await fetch('/api/crawls');
+      if (res.ok) {
+        const data: CrawlSummary[] = await res.json();
+        setCrawls(data);
+        if (!hasLoadedInitialCrawls) {
+          setHasLoadedInitialCrawls(true);
+          if (data.length > 0) {
+            setHomeMode('my_crawls');
+          } else {
+            setHomeMode('new_crawl');
+          }
+        }
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
   useEffect(() => {
     fetchProfiles();
+    fetchCrawls();
   }, []);
 
-  const handleStartDiscovery = async () => {
-    if (!targetUrl) return;
+  const normalizeUrlInput = (raw: string): string => {
+    const trimmed = raw.trim();
+    if (!trimmed) return '';
+    if (/^https?:\/\//i.test(trimmed)) return trimmed;
+    if (trimmed.startsWith('localhost') || trimmed.startsWith('127.0.0.1')) {
+      return `http://${trimmed}`;
+    }
+    return `https://${trimmed}`;
+  };
+
+  const handleStartDiscovery = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const formattedUrl = normalizeUrlInput(targetUrl);
+    if (!formattedUrl) return;
 
     try {
-      // Clear old gallery
       setGalleryScreens([]);
       setGallerySections([]);
+      setGalleryModals([]);
       setGalleryComponents([]);
+      setGalleryTokens([]);
       setPatterns([]);
 
-      // 1. Create or ensure project
+      let hostname = 'Site';
+      try {
+        hostname = new URL(formattedUrl).hostname || 'Local Project';
+      } catch {
+        hostname = formattedUrl;
+      }
+
       const projRes = await fetch('/api/projects', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          name: new URL(targetUrl).hostname || 'Local Project',
-          base_url: targetUrl,
+          name: hostname,
+          base_url: formattedUrl,
           auth_profile_id: selectedProfileId || null,
         }),
       });
@@ -76,7 +140,6 @@ export function App() {
       if (!projRes.ok) throw new Error('Failed to create project');
       const project = await projRes.json();
 
-      // 2. Start discovery
       const discRes = await fetch(`/api/projects/${project.id}/discover`, {
         method: 'POST',
       });
@@ -84,6 +147,8 @@ export function App() {
       if (!discRes.ok) throw new Error('Failed to start discovery');
       const discData = await discRes.json();
 
+      setCurrentSiteName(project.name);
+      setCurrentBaseUrl(project.base_url);
       setCurrentRunId(discData.run_id);
       setRunStatus('discovering');
       setProgressText('Initializing crawler browser...');
@@ -115,6 +180,7 @@ export function App() {
             loadDiscoveredRoutes(runId);
           } else if (data.status === 'completed') {
             loadGallery(runId);
+            fetchCrawls();
           }
         }
         if (data.asset_updated) {
@@ -128,7 +194,6 @@ export function App() {
     wsRef.current = ws;
   };
 
-  // Lightweight 2.5s fallback polling during active capture
   useEffect(() => {
     let interval: any = null;
     if (runStatus === 'capturing' && currentRunId) {
@@ -159,6 +224,10 @@ export function App() {
       const res = await fetch(`/api/runs/${runId}/gallery`);
       if (res.ok) {
         const data = await res.json();
+        if (data.project) {
+          setCurrentSiteName(data.project.site_name || 'Site name');
+          setCurrentBaseUrl(data.project.base_url || '');
+        }
         setGalleryScreens(data.screens || []);
         setGallerySections(data.sections || []);
         setGalleryModals(data.modals || []);
@@ -167,6 +236,31 @@ export function App() {
       }
     } catch (e) {
       console.error('Failed to load gallery:', e);
+    }
+  };
+
+  const handleOpenExistingCrawl = async (crawl: CrawlSummary) => {
+    setCurrentRunId(crawl.run_id);
+    setCurrentSiteName(crawl.site_name);
+    setCurrentBaseUrl(crawl.base_url);
+
+    if (crawl.status === 'review_pending') {
+      setRunStatus('review_pending');
+      await loadDiscoveredRoutes(crawl.run_id);
+    } else if (crawl.status === 'discovering') {
+      setRunStatus('discovering');
+      setProgressText(crawl.progress_text || 'Discovering routes...');
+      setProgressPercent(crawl.progress_percent || 20);
+      setupWebSocket(crawl.run_id);
+    } else if (crawl.status === 'capturing') {
+      setRunStatus('capturing');
+      setProgressText(crawl.progress_text || 'Capturing screens...');
+      setProgressPercent(crawl.progress_percent || 50);
+      await loadGallery(crawl.run_id);
+      setupWebSocket(crawl.run_id);
+    } else {
+      setRunStatus('completed');
+      await loadGallery(crawl.run_id);
     }
   };
 
@@ -241,7 +335,10 @@ export function App() {
     }
   };
 
-  const handleResetRun = () => {
+  const handleBackToHome = () => {
+    if (wsRef.current) {
+      wsRef.current.close();
+    }
     setCurrentRunId(null);
     setRunStatus(null);
     setPatterns([]);
@@ -250,163 +347,280 @@ export function App() {
     setGalleryModals([]);
     setGalleryComponents([]);
     setGalleryTokens([]);
+    fetchCrawls();
   };
 
-  return (
-    <div className="min-h-screen flex flex-col bg-[#0B0F19] text-slate-100">
-      {/* Top Navbar */}
-      <header className="h-16 border-b border-slate-800/80 bg-slate-950/60 backdrop-blur-md px-6 flex items-center justify-between sticky top-0 z-40">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-emerald-500 to-teal-400 flex items-center justify-center text-slate-950 shadow-lg shadow-emerald-500/20">
-            <Camera size={20} className="stroke-[2.5]" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="font-bold text-base tracking-tight text-white">Visual Studio</span>
-              <span className="px-1.5 py-0.5 rounded-md bg-emerald-500/10 text-emerald-400 font-mono text-[10px] border border-emerald-500/20 font-medium">
-                v1.0 Local
-              </span>
-            </div>
-            <p className="text-[11px] text-slate-400">Web & App Visual Intelligence Platform</p>
-          </div>
-        </div>
+  const activeProfile = profiles.find((p) => p.id === selectedProfileId);
 
-        <div className="flex items-center gap-3">
-          {runStatus === 'completed' && (
+  const filteredCrawls = crawls.filter((c) => {
+    if (!searchQuery.trim()) return true;
+    const q = searchQuery.toLowerCase();
+    return (
+      c.site_name.toLowerCase().includes(q) ||
+      c.base_url.toLowerCase().includes(q) ||
+      c.status.toLowerCase().includes(q)
+    );
+  });
+
+  return (
+    <div className="min-h-screen flex flex-col bg-[#131415] text-white font-sans">
+      {/* Minimal Uncluttered Top Bar (shown when on Home views so user can switch between Wireframe 1 & Wireframe 4 and manage Auth Sessions) */}
+      {!runStatus && (
+        <header className="w-full max-w-[1440px] mx-auto px-6 md:px-12 lg:px-[80px] pt-6 flex items-center justify-between">
+          <div className="flex items-center gap-2">
             <button
-              onClick={handleResetRun}
-              className="px-3.5 py-1.5 rounded-xl bg-slate-900 border border-slate-800 hover:border-slate-700 text-xs font-medium text-slate-200 flex items-center gap-1.5 transition"
+              onClick={() => setHomeMode('new_crawl')}
+              className={`px-4 py-2.5 rounded-[12px] text-[15px] leading-[22px] transition cursor-pointer ${
+                homeMode === 'new_crawl'
+                  ? 'bg-[#252627] text-white'
+                  : 'text-[#7E7E81] hover:text-white'
+              }`}
             >
-              <RefreshCw size={14} className="text-emerald-400" />
-              <span>New Run</span>
+              New crawl
             </button>
+            <button
+              onClick={() => {
+                fetchCrawls();
+                setHomeMode('my_crawls');
+              }}
+              className={`px-4 py-2.5 rounded-[12px] text-[15px] leading-[22px] flex items-center gap-2 transition cursor-pointer ${
+                homeMode === 'my_crawls'
+                  ? 'bg-[#252627] text-white'
+                  : 'text-[#7E7E81] hover:text-white'
+              }`}
+            >
+              <span>My crawls</span>
+              {crawls.length > 0 && (
+                <span className="text-[13px] text-[#7E7E81]">{crawls.length}</span>
+              )}
+            </button>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => {
+                fetchProfiles();
+                setIsAuthModalOpen(true);
+              }}
+              className="px-4 py-2.5 rounded-[12px] border border-[#242628] hover:bg-[#242628]/60 text-[15px] leading-[22px] text-white flex items-center gap-2 transition cursor-pointer"
+            >
+              <span>{activeProfile ? `Session: ${activeProfile.name}` : 'Auth sessions'}</span>
+              {profiles.length > 0 && (
+                <span className="text-[13px] text-[#7E7E81]">({profiles.length})</span>
+              )}
+            </button>
+          </div>
+        </header>
+      )}
+
+      {/* WIREFRAME - 1: "Start your first crawl" (#29:2) */}
+      {!runStatus && homeMode === 'new_crawl' && (
+        <main className="flex-1 flex flex-col items-center justify-center px-6 md:px-12 lg:px-[80px] pb-16">
+          <div className="w-full max-w-[800px] flex flex-col items-center gap-[24px]">
+            <h1 className="text-[32px] leading-[40px] font-semibold text-white tracking-tight text-center">
+              Start your first crawl
+            </h1>
+
+            <form
+              onSubmit={handleStartDiscovery}
+              className="w-full flex flex-col sm:flex-row items-stretch sm:items-center gap-[6px]"
+            >
+              {/* URL Input Box (#30:7) */}
+              <div className="flex-1 bg-[#242628] rounded-[12px] px-[24px] py-[16px] flex items-center justify-between gap-3 focus-within:ring-1 focus-within:ring-white/25 transition">
+                <input
+                  type="text"
+                  placeholder="Enter an URL"
+                  value={targetUrl}
+                  onChange={(e) => setTargetUrl(e.target.value)}
+                  autoFocus
+                  className="w-full bg-transparent text-[16px] leading-[24px] text-white placeholder-[#7E7E81] focus:outline-none"
+                />
+
+                {activeProfile && (
+                  <button
+                    type="button"
+                    onClick={() => setIsAuthModalOpen(true)}
+                    className="px-2.5 py-1 rounded-[8px] bg-[#131415] text-[13px] text-[#7E7E81] hover:text-white shrink-0 transition cursor-pointer"
+                    title="Authenticated session attached"
+                  >
+                    {activeProfile.name}
+                  </button>
+                )}
+              </div>
+
+              {/* Primary CTA Button (#30:51) */}
+              <button
+                type="submit"
+                className="bg-white hover:bg-white/90 text-[#262627] rounded-[12px] px-[24px] py-[16px] text-[16px] leading-[24px] font-normal whitespace-nowrap transition cursor-pointer"
+              >
+                New crawl
+              </button>
+            </form>
+          </div>
+        </main>
+      )}
+
+      {/* WIREFRAME - 4: "My crawls" (#30:248) */}
+      {!runStatus && homeMode === 'my_crawls' && (
+        <main className="flex-1 w-full max-w-[1440px] mx-auto px-6 md:px-12 lg:px-[80px] pt-10 lg:pt-[56px] pb-[40px] flex flex-col gap-[40px]">
+          {/* Header Row (#30:252) */}
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+            <h1 className="text-[32px] leading-[40px] font-bold text-white tracking-tight">
+              My crawls
+            </h1>
+
+            {/* Search Input (#30:304 / #30:305) */}
+            <div className="w-full md:w-[411px] bg-[#242628] rounded-[12px] px-[16px] py-[12px] flex items-center gap-[8px] focus-within:ring-1 focus-within:ring-white/25 transition">
+              <img src="/assets/figma/icon-search.svg" width={24} height={24} alt="" />
+              <input
+                type="text"
+                placeholder="Search"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full bg-transparent text-[16px] leading-[24px] text-white placeholder-[#7E7E81] focus:outline-none"
+              />
+            </div>
+          </div>
+
+          {/* Crawl Cards Grid (#30:279) */}
+          {filteredCrawls.length === 0 ? (
+            <div className="bg-[#0C0D0D] rounded-[24px] p-12 flex flex-col items-center justify-center gap-4 text-center">
+              <p className="text-[16px] leading-[24px] text-[#7E7E81]">
+                {crawls.length === 0
+                  ? 'You have not run any crawls yet.'
+                  : 'No crawls match your search.'}
+              </p>
+              {crawls.length === 0 && (
+                <button
+                  onClick={() => setHomeMode('new_crawl')}
+                  className="bg-white hover:bg-white/90 text-[#262627] rounded-[12px] px-6 py-3 text-[16px] leading-[24px] transition cursor-pointer"
+                >
+                  Start your first crawl
+                </button>
+              )}
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-[24px]">
+              {filteredCrawls.map((crawl) => (
+                <div
+                  key={crawl.run_id}
+                  onClick={() => handleOpenExistingCrawl(crawl)}
+                  className="group bg-[#0C0D0D] rounded-[24px] p-[24px] flex flex-col gap-[16px] border border-transparent hover:border-[#242628] transition cursor-pointer"
+                >
+                  {/* Thumbnail Preview (#30:281 — EL-cde1ee1c) */}
+                  <div className="relative bg-[#1D1D1E] rounded-[12px] h-[258px] overflow-hidden flex items-start justify-center">
+                    {crawl.preview_url ? (
+                      <img
+                        src={crawl.preview_url}
+                        alt={crawl.site_name}
+                        className="w-full h-full object-cover object-top transition duration-300 group-hover:scale-[1.02]"
+                        loading="lazy"
+                      />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-[15px] text-[#7E7E81] font-mono px-4 text-center">
+                        {crawl.base_url}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Card Text Info (#30:282 — EL-e03b43ef) */}
+                  <div className="px-[12px] flex flex-col gap-[8px]">
+                    <div className="text-[16px] leading-[24px] text-white font-normal truncate">
+                      {crawl.site_name}
+                    </div>
+                    <div className="flex items-center gap-[8px] text-[16px] leading-[24px] text-[#7E7E81] flex-wrap">
+                      <span>{crawl.screens_count} screens</span>
+                      <span>{crawl.components_count} components</span>
+                      <span>{crawl.tokens_count} tokens</span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </main>
+      )}
+
+      {/* ACTIVE RUN VIEWS (Discovery Progress, Route Review, or Wireframe - 3 Site Gallery) */}
+      {runStatus && (
+        <main className="flex-1 w-full max-w-[1440px] mx-auto px-6 md:px-12 lg:px-[80px] pt-10 lg:pt-[80px] pb-[40px] flex flex-col gap-[40px]">
+          {/* Discovering State */}
+          {runStatus === 'discovering' && (
+            <div className="flex-1 flex flex-col items-center justify-center py-20">
+              <LiveCrawlProgress
+                text={progressText}
+                percent={progressPercent}
+                status={runStatus}
+                targetUrl={currentBaseUrl}
+                onCancel={handleBackToHome}
+              />
+            </div>
           )}
 
-          <button
-            onClick={() => {
-              fetchProfiles();
-              setIsAuthModalOpen(true);
-            }}
-            className="px-3.5 py-1.5 rounded-xl bg-slate-900 border border-slate-800 hover:border-slate-700 text-xs font-medium text-slate-200 flex items-center gap-2 transition"
-          >
-            <KeyRound size={15} className="text-emerald-400" />
-            <span>Auth Session Vault</span>
-            {profiles.length > 0 && (
-              <span className="w-5 h-5 rounded-full bg-emerald-500/10 text-emerald-400 text-[10px] font-mono flex items-center justify-center border border-emerald-500/20">
-                {profiles.length}
-              </span>
-            )}
-          </button>
-        </div>
-      </header>
-
-      {/* Main Container */}
-      <main className="flex-1 max-w-6xl w-full mx-auto px-6 py-8 space-y-8">
-        {/* Launcher Card (Hidden while Capturing or when Gallery is ready) */}
-        {runStatus !== 'completed' && runStatus !== 'capturing' && (
-          <div className="p-6 md:p-8 rounded-3xl bg-gradient-to-b from-slate-900/90 to-slate-950/60 border border-slate-800/80 shadow-2xl space-y-6">
-            <div className="max-w-2xl">
-              <h1 className="text-2xl md:text-3xl font-extrabold text-white tracking-tight">
-                Crawl, Capture & Reverse-Engineer Any Web App
-              </h1>
-              <p className="text-sm text-slate-400 mt-2">
-                Supports public sites, <span className="text-emerald-400 font-medium">localhost</span>, and authenticated SaaS apps. Discovers all routes, auto-groups dynamic patterns, and captures pixel-perfect lossless UI inventories.
-              </p>
+          {/* Failed State */}
+          {runStatus === 'failed' && (
+            <div className="flex-1 flex flex-col items-center justify-center py-20">
+              <LiveCrawlProgress
+                text={progressText}
+                percent={progressPercent}
+                status={runStatus}
+                targetUrl={currentBaseUrl}
+                onCancel={handleBackToHome}
+              />
             </div>
+          )}
 
-            {/* Form */}
-            <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
-              <div className="md:col-span-7">
-                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
-                  Target URL (Localhost or Public)
-                </label>
-                <div className="relative">
-                  <Globe className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500" size={17} />
-                  <input
-                    type="url"
-                    placeholder="http://localhost:5173 or https://app.example.com"
-                    value={targetUrl}
-                    onChange={(e) => setTargetUrl(e.target.value)}
-                    className="w-full pl-10 pr-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm font-mono text-white placeholder-slate-600 focus:outline-none focus:border-emerald-500 transition shadow-inner"
-                  />
-                </div>
-              </div>
+          {/* Route Review State */}
+          {runStatus === 'review_pending' && (
+            <DiscoveryReview
+              runId={currentRunId || ''}
+              siteName={currentSiteName}
+              baseUrl={currentBaseUrl}
+              patterns={patterns}
+              onToggleRoute={handleToggleRoute}
+              onTogglePattern={handleTogglePattern}
+              onProceedToCapture={handleProceedToCapture}
+              onBack={handleBackToHome}
+            />
+          )}
 
-              <div className="md:col-span-3">
-                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
-                  Authenticated Session
-                </label>
-                <select
-                  value={selectedProfileId}
-                  onChange={(e) => setSelectedProfileId(e.target.value)}
-                  className="w-full px-3 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-emerald-500 transition cursor-pointer"
-                >
-                  <option value="">Public / Unauthenticated</option>
-                  {profiles.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      🔑 {p.name} ({p.domain})
-                    </option>
-                  ))}
-                </select>
-              </div>
+          {/* WIREFRAME - 3: Site Detail & Gallery View (#30:192) */}
+          {(runStatus === 'capturing' || runStatus === 'completed') && (
+            <>
+              {runStatus === 'capturing' && (
+                <LiveCrawlProgress
+                  text={progressText}
+                  percent={progressPercent}
+                  status={runStatus}
+                  targetUrl={currentBaseUrl}
+                />
+              )}
+              <StudioGallery
+                runId={currentRunId || ''}
+                siteName={currentSiteName}
+                baseUrl={currentBaseUrl}
+                screens={galleryScreens}
+                sections={gallerySections}
+                modals={galleryModals}
+                components={galleryComponents}
+                tokens={galleryTokens}
+                onReset={handleBackToHome}
+                onRecapture={handleRecaptureRoutes}
+                isLiveCapturing={runStatus === 'capturing'}
+              />
+            </>
+          )}
+        </main>
+      )}
 
-              <div className="md:col-span-2 flex items-end">
-                <button
-                  onClick={handleStartDiscovery}
-                  disabled={!targetUrl || runStatus === 'discovering' || runStatus === 'capturing'}
-                  className="w-full py-2.5 px-4 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-slate-950 font-bold text-xs rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20 transition cursor-pointer"
-                >
-                  <Play size={14} className="fill-current" />
-                  <span>Smart Crawl</span>
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Live Progress Bar if active */}
-        {runStatus && runStatus !== 'completed' && (
-          <LiveCrawlProgress
-            text={progressText}
-            percent={progressPercent}
-            status={runStatus}
-          />
-        )}
-
-        {/* Discovery Review Step */}
-        {runStatus === 'review_pending' && patterns.length > 0 && (
-          <DiscoveryReview
-            runId={currentRunId || ''}
-            patterns={patterns}
-            onToggleRoute={handleToggleRoute}
-            onTogglePattern={handleTogglePattern}
-            onProceedToCapture={handleProceedToCapture}
-          />
-        )}
-
-        {/* Gallery View (Live Streaming during capture & final inspection) */}
-        {(runStatus === 'capturing' || runStatus === 'completed') && (
-          <StudioGallery
-            runId={currentRunId || ''}
-            screens={galleryScreens}
-            sections={gallerySections}
-            modals={galleryModals}
-            components={galleryComponents}
-            tokens={galleryTokens}
-            onReset={handleResetRun}
-            onRecapture={handleRecaptureRoutes}
-            isLiveCapturing={runStatus === 'capturing'}
-          />
-        )}
-      </main>
-
-      {/* Auth Vault Modal */}
+      {/* Auth Session Vault Modal */}
       <AuthVaultModal
         isOpen={isAuthModalOpen}
         onClose={() => {
           setIsAuthModalOpen(false);
           fetchProfiles();
         }}
+        selectedProfileId={selectedProfileId}
         onProfileSelected={(id) => setSelectedProfileId(id)}
       />
     </div>

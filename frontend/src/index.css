@@ -2,28 +2,45 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  /* Extracted Figma Design Tokens (node-id: 30-319) */
+  --bg-canvas: #131415;        /* fill_87fdd882 */
+  --bg-card: #0C0D0D;          /* EL-d80a5499 */
+  --bg-media: #1D1D1E;         /* EL-cde1ee1c */
+  --bg-input: #242628;         /* fill_f51891b2 */
+  --bg-chip: #252627;          /* EL-624b18cd */
+  --stroke-subtle: #242628;    /* EL-59593f02 */
+  --text-primary: #FFFFFF;     /* fill_658ab2fa */
+  --text-secondary: #7E7E81;   /* fill_469b494f */
+  --text-cta: #262627;         /* fill_737603d6 */
+  --icon-muted: #888888;
+  --radius-control: 12px;
+  --radius-card: 24px;
+}
+
 @layer base {
   body {
-    background-color: #0B0F19;
-    color: #E2E8F0;
+    background-color: var(--bg-canvas);
+    color: var(--text-primary);
+    font-family: 'Geist', -apple-system, BlinkMacSystemFont, sans-serif;
   }
 }
 
-/* Custom scrollbars */
+/* Minimalist custom scrollbars */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #0f172a;
+  background: #131415;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #334155;
+  background: #242628;
   border-radius: 9999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #475569;
+  background: #36383B;
 }

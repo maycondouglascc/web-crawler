@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { KeyRound, ExternalLink, Trash2, Plus, ShieldCheck, X, Loader2 } from 'lucide-react';
+import { ExternalLink, Trash2, X, Loader2 } from 'lucide-react';
 
 interface AuthProfile {
   id: string;
@@ -12,10 +12,16 @@ interface AuthProfile {
 interface AuthVaultModalProps {
   isOpen: boolean;
   onClose: () => void;
+  selectedProfileId?: string;
   onProfileSelected?: (profileId: string) => void;
 }
 
-export const AuthVaultModal: React.FC<AuthVaultModalProps> = ({ isOpen, onClose, onProfileSelected }) => {
+export const AuthVaultModal: React.FC<AuthVaultModalProps> = ({
+  isOpen,
+  onClose,
+  selectedProfileId = '',
+  onProfileSelected,
+}) => {
   const [profiles, setProfiles] = useState<AuthProfile[]>([]);
   const [loading, setLoading] = useState(false);
   const [isLaunching, setIsLaunching] = useState(false);
@@ -71,9 +77,12 @@ export const AuthVaultModal: React.FC<AuthVaultModalProps> = ({ isOpen, onClose,
   };
 
   const handleDeleteProfile = async (id: string) => {
-    if (!confirm('Are you sure you want to remove this saved session?')) return;
+    if (!confirm('Remove this saved authenticated session?')) return;
     try {
       await fetch(`/api/auth/profiles/${id}`, { method: 'DELETE' });
+      if (selectedProfileId === id && onProfileSelected) {
+        onProfileSelected('');
+      }
       await fetchProfiles();
     } catch (err) {
       console.error('Delete failed:', err);
@@ -83,155 +92,162 @@ export const AuthVaultModal: React.FC<AuthVaultModalProps> = ({ isOpen, onClose,
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4">
-      <div className="w-full max-w-2xl bg-[#111827] border border-slate-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-[640px] bg-[#0C0D0D] border border-[#242628] rounded-[24px] p-6 md:p-8 flex flex-col gap-6 max-h-[90vh] overflow-hidden shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 bg-slate-900/50">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
-              <KeyRound size={20} />
-            </div>
-            <div>
-              <h2 className="text-lg font-semibold text-white">Authenticated Session Vault</h2>
-              <p className="text-xs text-slate-400">Log into protected apps once. Safe-Crawl guardrails block logouts.</p>
-            </div>
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex flex-col gap-1">
+            <h2 className="text-[24px] leading-[32px] font-bold text-white">Authenticated sessions</h2>
+            <p className="text-[16px] leading-[24px] text-[#7E7E81]">
+              Sign in once via a secure Chromium window to crawl private dashboards and SaaS apps.
+            </p>
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition"
+            className="p-2 text-[#7E7E81] hover:text-white rounded-[12px] hover:bg-[#242628] transition cursor-pointer"
           >
-            <X size={18} />
+            <X size={20} />
           </button>
         </div>
 
         {/* Content */}
-        <div className="p-6 overflow-y-auto space-y-6">
-          {/* New Login Form */}
-          <div className="p-4 rounded-xl bg-slate-900/80 border border-slate-800">
-            <h3 className="text-sm font-medium text-slate-200 mb-3 flex items-center gap-2">
-              <Plus size={16} className="text-emerald-400" />
-              Connect New Web App Session
-            </h3>
-            <form onSubmit={handleLaunchLogin} className="space-y-3">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-slate-400 mb-1">Login / App URL</label>
-                  <input
-                    type="url"
-                    placeholder="https://app.example.com/login"
-                    value={loginUrl}
-                    onChange={(e) => setLoginUrl(e.target.value)}
-                    required
-                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-400 mb-1">Session Label (Optional)</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. Staging Admin / Prod Workspace"
-                    value={profileName}
-                    onChange={(e) => setProfileName(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition"
-                  />
-                </div>
-              </div>
+        <div className="overflow-y-auto flex flex-col gap-6 pr-1">
+          {/* New Session Form */}
+          <form onSubmit={handleLaunchLogin} className="bg-[#131415] rounded-[16px] p-5 flex flex-col gap-4 border border-[#242628]">
+            <div className="text-[16px] leading-[24px] text-white font-medium">
+              Record a new session
+            </div>
 
-              <div className="flex items-center justify-between pt-1">
-                <div className="flex items-center gap-2 text-xs text-slate-400">
-                  <ShieldCheck size={14} className="text-emerald-400" />
-                  <span>Opens headed Chromium window. Supports Google OAuth, 2FA & Magic Links.</span>
-                </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <input
+                type="url"
+                placeholder="Login URL (https://app.example.com/login)"
+                value={loginUrl}
+                onChange={(e) => setLoginUrl(e.target.value)}
+                required
+                className="w-full px-4 py-3 bg-[#242628] rounded-[12px] text-[15px] leading-[22px] text-white placeholder-[#7E7E81] focus:outline-none"
+              />
+              <input
+                type="text"
+                placeholder="Label (optional, e.g. Staging Admin)"
+                value={profileName}
+                onChange={(e) => setProfileName(e.target.value)}
+                className="w-full px-4 py-3 bg-[#242628] rounded-[12px] text-[15px] leading-[22px] text-white placeholder-[#7E7E81] focus:outline-none"
+              />
+            </div>
+
+            <div className="flex items-center justify-between gap-4 pt-1 flex-wrap">
+              <span className="text-[13px] text-[#7E7E81]">
+                Safe-crawl guardrails automatically block logouts and destructive requests.
+              </span>
+              <button
+                type="submit"
+                disabled={isLaunching || !loginUrl}
+                className="px-5 py-2.5 bg-white hover:bg-white/90 disabled:opacity-40 text-[#262627] text-[15px] leading-[22px] font-medium rounded-[12px] flex items-center gap-2 transition cursor-pointer"
+              >
+                {isLaunching ? (
+                  <>
+                    <Loader2 size={15} className="animate-spin" />
+                    <span>Browser open...</span>
+                  </>
+                ) : (
+                  <>
+                    <ExternalLink size={15} />
+                    <span>Launch login browser</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </form>
+
+          {/* Saved Sessions List */}
+          <div className="flex flex-col gap-3">
+            <div className="flex items-center justify-between">
+              <span className="text-[14px] text-[#7E7E81]">Saved sessions</span>
+              {selectedProfileId && onProfileSelected && (
                 <button
-                  type="submit"
-                  disabled={isLaunching || !loginUrl}
-                  className="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-slate-950 font-semibold text-xs rounded-lg flex items-center gap-2 transition"
+                  onClick={() => onProfileSelected('')}
+                  className="text-[13px] text-[#7E7E81] hover:text-white transition cursor-pointer"
                 >
-                  {isLaunching ? (
-                    <>
-                      <Loader2 size={14} className="animate-spin" />
-                      Login Window Open...
-                    </>
-                  ) : (
-                    <>
-                      <ExternalLink size={14} />
-                      Launch Login Window
-                    </>
-                  )}
+                  Use public (unauthenticated)
                 </button>
-              </div>
-            </form>
-          </div>
+              )}
+            </div>
 
-          {/* Active Profiles List */}
-          <div>
-            <h3 className="text-sm font-medium text-slate-300 mb-3">Saved Active Sessions</h3>
             {loading ? (
-              <div className="p-8 text-center text-slate-500 text-sm">
-                <Loader2 className="w-5 h-5 animate-spin mx-auto mb-2 text-emerald-400" />
-                Loading saved sessions...
+              <div className="p-8 text-center text-[#7E7E81] text-[15px]">
+                <Loader2 className="w-5 h-5 animate-spin mx-auto mb-2 text-white" />
+                Loading sessions...
               </div>
             ) : profiles.length === 0 ? (
-              <div className="p-8 text-center border border-dashed border-slate-800 rounded-xl text-slate-500 text-xs">
-                No active login sessions saved yet. Add one above to crawl logged-in apps.
+              <div className="p-8 text-center bg-[#131415] rounded-[16px] text-[#7E7E81] text-[15px]">
+                No authenticated sessions saved yet.
               </div>
             ) : (
-              <div className="space-y-2">
-                {profiles.map((p) => (
-                  <div
-                    key={p.id}
-                    className="flex items-center justify-between p-3.5 rounded-xl bg-slate-900/40 border border-slate-800/80 hover:border-slate-700 transition"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
-                      <div>
-                        <div className="text-sm font-medium text-slate-100">{p.name}</div>
-                        <div className="text-xs text-slate-400 flex items-center gap-3 mt-0.5">
-                          <span className="font-mono text-[11px] text-slate-500">{p.domain}</span>
+              <div className="flex flex-col gap-2.5">
+                {profiles.map((p) => {
+                  const isSelected = selectedProfileId === p.id;
+                  return (
+                    <div
+                      key={p.id}
+                      className={`flex items-center justify-between p-4 rounded-[16px] border transition ${
+                        isSelected
+                          ? 'bg-[#1D1D1E] border-white/40'
+                          : 'bg-[#131415] border-[#242628] hover:border-[#36383B]'
+                      }`}
+                    >
+                      <div className="flex flex-col gap-0.5">
+                        <div className="text-[16px] leading-[24px] text-white flex items-center gap-2">
+                          <span>{p.name}</span>
+                          {isSelected && (
+                            <span className="px-2 py-0.5 rounded-[6px] bg-white text-[#262627] text-[11px] font-medium">
+                              Active
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-[14px] leading-[20px] text-[#7E7E81] flex items-center gap-2">
+                          <span className="font-mono">{p.domain}</span>
                           <span>•</span>
-                          <span>{p.cookie_count} cookies captured</span>
-                          <span>•</span>
-                          <span>Saved {new Date(p.created_at).toLocaleDateString()}</span>
+                          <span>{p.cookie_count} cookies</span>
                         </div>
                       </div>
-                    </div>
 
-                    <div className="flex items-center gap-2">
-                      {onProfileSelected && (
+                      <div className="flex items-center gap-2">
+                        {onProfileSelected && (
+                          <button
+                            onClick={() => {
+                              onProfileSelected(isSelected ? '' : p.id);
+                              onClose();
+                            }}
+                            className={`px-3.5 py-2 rounded-[12px] text-[14px] transition cursor-pointer ${
+                              isSelected
+                                ? 'border border-[#242628] text-white hover:bg-[#242628]'
+                                : 'bg-white text-[#262627] hover:bg-white/90'
+                            }`}
+                          >
+                            {isSelected ? 'Deselect' : 'Select'}
+                          </button>
+                        )}
                         <button
-                          onClick={() => {
-                            onProfileSelected(p.id);
-                            onClose();
-                          }}
-                          className="px-3 py-1.5 text-xs font-medium text-emerald-400 hover:bg-emerald-500/10 border border-emerald-500/20 rounded-lg transition"
+                          onClick={() => handleDeleteProfile(p.id)}
+                          className="p-2 text-[#7E7E81] hover:text-red-400 rounded-[10px] hover:bg-[#242628] transition cursor-pointer"
+                          title="Delete session"
                         >
-                          Use in Run
+                          <Trash2 size={16} />
                         </button>
-                      )}
-                      <button
-                        onClick={() => handleDeleteProfile(p.id)}
-                        className="p-1.5 text-slate-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition"
-                        title="Delete session"
-                      >
-                        <Trash2 size={16} />
-                      </button>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
-        </div>
-
-        {/* Footer */}
-        <div className="px-6 py-3 border-t border-slate-800 bg-slate-900/40 flex items-center justify-between text-xs text-slate-500">
-          <span>Safe-Crawl guardrails automatically intercept & prevent destructive logouts.</span>
-          <button
-            onClick={onClose}
-            className="px-4 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg transition"
-          >
-            Close
-          </button>
         </div>
       </div>
     </div>

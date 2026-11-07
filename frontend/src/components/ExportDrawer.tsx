@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Download, FileText, Code2, Globe, Sparkles, X, Check, ExternalLink } from 'lucide-react';
+import { Download, X, Check } from 'lucide-react';
 
 interface ExportDrawerProps {
   isOpen: boolean;
@@ -14,35 +14,33 @@ export const ExportDrawer: React.FC<ExportDrawerProps> = ({ isOpen, onClose, run
 
   const exportFiles = [
     {
-      name: 'CONTEXT.md',
-      title: 'AI Coding Agent Context Pack',
-      description: 'Route map, section screenshots, and component inventories formatted for Antigravity, Cursor, and Claude Code.',
-      icon: Sparkles,
-      color: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20',
-      filename: 'CONTEXT.md',
-    },
-    {
       name: 'DESIGN_SYSTEM.md',
-      title: 'Design System Audit Report',
-      description: 'Human-readable Markdown tables with color swatches, typography scales, radii, and box shadows.',
-      icon: FileText,
-      color: 'text-blue-400 bg-blue-500/10 border-blue-500/20',
+      title: 'Design system specification (design.md)',
+      description: 'Markdown tables with extracted color tokens, typography scale, border radii, and elevation shadows.',
       filename: 'DESIGN_SYSTEM.md',
     },
     {
+      name: 'images.zip',
+      title: 'All captured images (images.zip)',
+      description: 'Full-resolution screens, semantic page sections, modals, and harvested UI component crops.',
+      filename: 'images.zip',
+    },
+    {
+      name: 'CONTEXT.md',
+      title: 'AI coding agent context pack (CONTEXT.md)',
+      description: 'Route hierarchy, section breakdown, and component inventory formatted for AI coding assistants.',
+      filename: 'CONTEXT.md',
+    },
+    {
       name: 'tokens.json',
-      title: 'W3C Standard Design Tokens',
-      description: 'Structured JSON tokens ready for Figma token plugins, Tailwind themes, or design system code.',
-      icon: Code2,
-      color: 'text-amber-400 bg-amber-500/10 border-amber-500/20',
+      title: 'W3C design tokens (tokens.json)',
+      description: 'Structured JSON tokens ready for Figma token plugins, Tailwind config, or CSS variable generation.',
       filename: 'tokens.json',
     },
     {
       name: 'gallery.html',
-      title: 'Standalone Portable Gallery',
-      description: 'Zero-dependency offline visual gallery you can zip and email to clients or team members.',
-      icon: Globe,
-      color: 'text-purple-400 bg-purple-500/10 border-purple-500/20',
+      title: 'Portable standalone gallery (gallery.html)',
+      description: 'Zero-dependency offline visual gallery for sharing with stakeholders.',
       filename: 'gallery.html',
     },
   ];
@@ -55,85 +53,70 @@ export const ExportDrawer: React.FC<ExportDrawerProps> = ({ isOpen, onClose, run
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    setTimeout(() => setDownloading(null), 1000);
+    setTimeout(() => setDownloading(null), 1200);
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-      <div className="w-full max-w-2xl bg-[#111827] border border-slate-800 rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 py-5 border-b border-slate-800 bg-slate-900/50">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
-              <Download size={20} />
-            </div>
-            <div>
-              <h2 className="text-lg font-bold text-white">Exports & Intelligence Packs</h2>
-              <p className="text-xs text-slate-400">Download design tokens, AI context packs, and portable client galleries.</p>
-            </div>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-[640px] bg-[#0C0D0D] border border-[#242628] rounded-[24px] p-6 md:p-8 flex flex-col gap-6 max-h-[90vh] overflow-hidden shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex flex-col gap-1">
+            <h2 className="text-[24px] leading-[32px] font-bold text-white">Export crawl artifacts</h2>
+            <p className="text-[16px] leading-[24px] text-[#7E7E81]">
+              Download design specs, screenshot archives, and AI context files.
+            </p>
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 text-slate-400 hover:text-white rounded-xl hover:bg-slate-800 transition"
+            className="p-2 text-[#7E7E81] hover:text-white rounded-[12px] hover:bg-[#242628] transition cursor-pointer"
           >
-            <X size={18} />
+            <X size={20} />
           </button>
         </div>
 
-        {/* Content */}
-        <div className="p-6 overflow-y-auto space-y-4">
+        <div className="overflow-y-auto flex flex-col gap-3 pr-1">
           {exportFiles.map((file) => {
-            const Icon = file.icon;
             const isDone = downloading === file.filename;
 
             return (
               <div
                 key={file.filename}
-                className="p-4 rounded-2xl bg-slate-900/60 border border-slate-800 hover:border-slate-700 transition flex items-center justify-between gap-4"
+                className="p-5 rounded-[16px] bg-[#131415] border border-[#242628] hover:border-[#36383B] transition flex items-center justify-between gap-4"
               >
-                <div className="flex items-start gap-3.5">
-                  <div className={`w-10 h-10 rounded-xl border flex items-center justify-center shrink-0 ${file.color}`}>
-                    <Icon size={18} />
+                <div className="flex flex-col gap-1 min-w-0">
+                  <div className="text-[16px] leading-[24px] text-white font-medium truncate">
+                    {file.title}
                   </div>
-                  <div>
-                    <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                      <span>{file.title}</span>
-                      <span className="font-mono text-[11px] text-slate-400 font-normal">({file.filename})</span>
-                    </h3>
-                    <p className="text-xs text-slate-400 mt-0.5 leading-relaxed">{file.description}</p>
-                  </div>
+                  <p className="text-[14px] leading-[20px] text-[#7E7E81]">
+                    {file.description}
+                  </p>
                 </div>
 
                 <button
                   onClick={() => handleDownload(file.filename)}
-                  className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold flex items-center gap-2 shrink-0 border border-slate-700 transition"
+                  className="px-4 py-2.5 rounded-[12px] bg-white hover:bg-white/90 text-[#262627] text-[14px] leading-[20px] font-medium flex items-center gap-2 shrink-0 transition cursor-pointer"
                 >
                   {isDone ? (
                     <>
-                      <Check size={14} className="text-emerald-400" />
-                      <span>Downloaded</span>
+                      <Check size={15} />
+                      <span>Saved</span>
                     </>
                   ) : (
                     <>
-                      <Download size={14} />
-                      <span>Download</span>
+                      <Download size={15} />
+                      <span>Export</span>
                     </>
                   )}
                 </button>
               </div>
             );
           })}
-        </div>
-
-        {/* Footer */}
-        <div className="px-6 py-4 border-t border-slate-800 bg-slate-900/40 flex items-center justify-between text-xs text-slate-500">
-          <span>All exports are generated locally and persisted in the project run directory.</span>
-          <button
-            onClick={onClose}
-            className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl transition"
-          >
-            Done
-          </button>
         </div>
       </div>
     </div>

@@ -7,14 +7,27 @@ export default {
   darkMode: 'class',
   theme: {
     extend: {
+      fontFamily: {
+        sans: ['Geist', '-apple-system', 'BlinkMacSystemFont', 'Inter', 'sans-serif'],
+        mono: ['"Geist Mono"', 'ui-monospace', 'SFMono-Regular', 'monospace'],
+      },
       colors: {
-        brand: {
-          50: '#f0fdf4',
-          500: '#10b981',
-          600: '#059669',
-          700: '#047857',
-        }
-      }
+        studio: {
+          canvas: '#131415',
+          card: '#0C0D0D',
+          media: '#1D1D1E',
+          input: '#242628',
+          chip: '#252627',
+          stroke: '#242628',
+          muted: '#7E7E81',
+          icon: '#888888',
+          ctaText: '#262627',
+        },
+      },
+      borderRadius: {
+        'studio-sm': '12px',
+        'studio-lg': '24px',
+      },
     },
   },
   plugins: [],
