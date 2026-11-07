@@ -10,6 +10,7 @@ import uuid
 import json
 import asyncio
 import time
+import zipfile
 from typing import Dict, Any, List, Optional
 from datetime import datetime
 from pydantic import BaseModel
@@ -120,15 +121,112 @@ class RecaptureRequest(BaseModel):
 def health_check():
     return {"status": "ok", "service": "visual-studio-backend"}
 
-# 1. Projects
+# 1. Projects & Crawls
 @app.get("/api/projects")
 def list_projects():
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM projects ORDER BY created_at DESC")
-    rows = cursor.fetchall()
+    projects = []
+    for row in cursor.fetchall():
+        project = dict(row)
+        cursor.execute(
+            """
+            SELECT id, status, progress_text, progress_percent, created_at, completed_at
+            FROM runs
+            WHERE project_id = ?
+            ORDER BY created_at DESC
+            LIMIT 1
+            """,
+            (project["id"],),
+        )
+        run = cursor.fetchone()
+        if run:
+            run_dict = dict(run)
+            rid = run_dict["id"]
+            cursor.execute("SELECT COUNT(*) as c FROM captures WHERE run_id = ? AND capture_type IN ('full_page', 'fold')", (rid,))
+            run_dict["screens_count"] = cursor.fetchone()["c"]
+            cursor.execute("SELECT COUNT(*) as c FROM captures WHERE run_id = ? AND capture_type = 'section'", (rid,))
+            run_dict["sections_count"] = cursor.fetchone()["c"]
+            cursor.execute("SELECT COUNT(*) as c FROM components WHERE run_id = ?", (rid,))
+            run_dict["components_count"] = cursor.fetchone()["c"]
+            cursor.execute("SELECT COUNT(*) as c FROM tokens WHERE run_id = ?", (rid,))
+            run_dict["tokens_count"] = cursor.fetchone()["c"]
+            cursor.execute("SELECT COUNT(*) as c FROM routes WHERE run_id = ?", (rid,))
+            run_dict["routes_count"] = cursor.fetchone()["c"]
+            project["latest_run"] = run_dict
+
+            cursor.execute(
+                """
+                SELECT file_path FROM captures
+                WHERE run_id = ? AND capture_type IN ('full_page', 'fold') AND file_path != ''
+                ORDER BY CASE WHEN route_path = '/' THEN 0 ELSE 1 END,
+                         CASE WHEN viewport_label = 'desktop' THEN 0 ELSE 1 END,
+                         created_at ASC
+                LIMIT 1
+                """,
+                (rid,),
+            )
+            capture = cursor.fetchone()
+            project["preview_url"] = make_media_url(capture["file_path"]) if (capture and capture["file_path"]) else None
+        else:
+            project["latest_run"] = None
+            project["preview_url"] = None
+        projects.append(project)
     conn.close()
-    return [dict(r) for r in rows]
+    return projects
+
+@app.get("/api/crawls")
+def list_crawls():
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT
+            r.id as run_id,
+            r.project_id,
+            r.status,
+            r.progress_text,
+            r.progress_percent,
+            r.created_at,
+            r.completed_at,
+            p.name as site_name,
+            p.base_url
+        FROM runs r
+        JOIN projects p ON r.project_id = p.id
+        ORDER BY r.created_at DESC
+    """)
+    runs = [dict(r) for r in cursor.fetchall()]
+
+    for item in runs:
+        rid = item["run_id"]
+        cursor.execute("SELECT COUNT(*) as c FROM captures WHERE run_id = ? AND capture_type IN ('full_page', 'fold')", (rid,))
+        item["screens_count"] = cursor.fetchone()["c"]
+
+        cursor.execute("SELECT COUNT(*) as c FROM captures WHERE run_id = ? AND capture_type = 'section'", (rid,))
+        item["sections_count"] = cursor.fetchone()["c"]
+
+        cursor.execute("SELECT COUNT(*) as c FROM components WHERE run_id = ?", (rid,))
+        item["components_count"] = cursor.fetchone()["c"]
+
+        cursor.execute("SELECT COUNT(*) as c FROM tokens WHERE run_id = ?", (rid,))
+        item["tokens_count"] = cursor.fetchone()["c"]
+
+        cursor.execute("SELECT COUNT(*) as c FROM routes WHERE run_id = ?", (rid,))
+        item["routes_count"] = cursor.fetchone()["c"]
+
+        cursor.execute("""
+            SELECT file_path FROM captures
+            WHERE run_id = ? AND capture_type IN ('full_page', 'fold')
+            ORDER BY CASE WHEN route_path = '/' THEN 0 ELSE 1 END,
+                     CASE WHEN viewport_label = 'desktop' THEN 0 ELSE 1 END,
+                     created_at ASC
+            LIMIT 1
+        """, (rid,))
+        preview_row = cursor.fetchone()
+        item["preview_url"] = make_media_url(preview_row["file_path"]) if preview_row else None
+
+    conn.close()
+    return runs
 
 @app.post("/api/projects")
 def create_project(data: ProjectCreate):
@@ -353,6 +451,15 @@ def get_gallery_assets(run_id: str):
     conn = get_connection()
     cursor = conn.cursor()
 
+    cursor.execute("""
+        SELECT r.id as run_id, r.status, r.created_at, p.id as project_id, p.name as site_name, p.base_url
+        FROM runs r
+        JOIN projects p ON r.project_id = p.id
+        WHERE r.id = ?
+    """, (run_id,))
+    run_meta = cursor.fetchone()
+    project_info = dict(run_meta) if run_meta else None
+
     # Full page & fold captures
     cursor.execute("""
         SELECT * FROM captures
@@ -405,6 +512,7 @@ def get_gallery_assets(run_id: str):
 
     return {
         "run_id": run_id,
+        "project": project_info,
         "screens": screens,
         "sections": sections,
         "modals": modals,
@@ -419,12 +527,39 @@ def download_export_file(run_id: str, file_name: str):
     cursor = conn.cursor()
     cursor.execute("SELECT project_id FROM runs WHERE id = ?", (run_id,))
     run = cursor.fetchone()
-    conn.close()
 
     if not run:
+        conn.close()
         raise HTTPException(status_code=404, detail="Run not found")
 
-    file_path = os.path.join(PROJECTS_BASE_DIR, run["project_id"], "runs", run_id, "exports", file_name)
+    run_dir = os.path.join(PROJECTS_BASE_DIR, run["project_id"], "runs", run_id)
+    exports_dir = os.path.join(run_dir, "exports")
+    os.makedirs(exports_dir, exist_ok=True)
+
+    if file_name == "images.zip":
+        cursor.execute("SELECT file_path, capture_type FROM captures WHERE run_id = ?", (run_id,))
+        cap_rows = cursor.fetchall()
+        cursor.execute("SELECT preview_path FROM components WHERE run_id = ?", (run_id,))
+        comp_rows = cursor.fetchall()
+        conn.close()
+
+        zip_path = os.path.join(exports_dir, "images.zip")
+        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+            for r in cap_rows:
+                fpath = r["file_path"]
+                if fpath and os.path.exists(fpath):
+                    arcname = os.path.join(r["capture_type"], os.path.basename(fpath))
+                    zf.write(fpath, arcname=arcname)
+            for c in comp_rows:
+                fpath = c["preview_path"]
+                if fpath and os.path.exists(fpath):
+                    arcname = os.path.join("components", os.path.basename(fpath))
+                    zf.write(fpath, arcname=arcname)
+        return FileResponse(zip_path, filename="images.zip")
+
+    conn.close()
+
+    file_path = os.path.join(exports_dir, file_name)
     if not os.path.exists(file_path):
         raise HTTPException(status_code=404, detail=f"File {file_name} not found")
 

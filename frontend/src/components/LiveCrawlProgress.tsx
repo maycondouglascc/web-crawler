@@ -1,51 +1,52 @@
-import React from 'react';
-import { Loader2, Globe, CheckCircle2, AlertCircle } from 'lucide-react';
+import React from "react";
+import { AlertCircle, CheckCircle2, Loader2 } from "lucide-react";
 
 interface LiveCrawlProgressProps {
   text: string;
   percent: number;
-  status: 'discovering' | 'capturing' | 'review_pending' | 'completed' | 'failed';
+  status: "discovering" | "capturing" | "review_pending" | "completed" | "failed" | string;
 }
 
 export const LiveCrawlProgress: React.FC<LiveCrawlProgressProps> = ({ text, percent, status }) => {
-  return (
-    <div className="p-6 rounded-2xl bg-slate-900/90 border border-slate-800 shadow-2xl space-y-4">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          {status === 'failed' ? (
-            <div className="w-8 h-8 rounded-lg bg-red-500/10 border border-red-500/20 flex items-center justify-center text-red-400">
-              <AlertCircle size={18} />
-            </div>
-          ) : status === 'completed' || status === 'review_pending' ? (
-            <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
-              <CheckCircle2 size={18} />
-            </div>
-          ) : (
-            <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
-              <Loader2 size={18} className="animate-spin" />
-            </div>
-          )}
+  const failed = status === "failed";
+  const done = status === "completed" || status === "review_pending";
+  const title =
+    status === "discovering"
+      ? "Discovering routes"
+      : status === "capturing"
+        ? "Capturing pages"
+        : status === "failed"
+          ? "Crawl failed"
+          : text;
 
+  return (
+    <div className="flex flex-col gap-4 rounded-card bg-sunken p-6">
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex items-center gap-4">
+          <div
+            className={`flex h-12 w-12 items-center justify-center rounded-control border ${
+              failed ? "border-danger bg-danger-muted text-danger" : "border-line text-white"
+            }`}
+          >
+            {failed ? (
+              <AlertCircle size={24} />
+            ) : done ? (
+              <CheckCircle2 size={24} />
+            ) : (
+              <Loader2 size={24} className="animate-spin" />
+            )}
+          </div>
           <div>
-            <h3 className="text-sm font-semibold text-white capitalize">
-              {status === 'discovering' ? 'Discovering Routes & SPAs...' : text}
-            </h3>
-            <p className="text-xs text-slate-400 mt-0.5">{text}</p>
+            <h3 className="text-body text-white">{title}</h3>
+            <p className="text-label text-muted">{text}</p>
           </div>
         </div>
-
-        <div className="font-mono text-sm font-bold text-emerald-400">
-          {percent}%
-        </div>
+        <p className="text-body text-white">{percent}%</p>
       </div>
-
-      {/* Progress Bar */}
-      <div className="w-full h-2 rounded-full bg-slate-950 border border-slate-800/80 overflow-hidden">
+      <div className="h-2 overflow-hidden rounded-control bg-canvas">
         <div
-          className={`h-full transition-all duration-300 ${
-            status === 'failed' ? 'bg-red-500' : 'bg-gradient-to-r from-emerald-500 to-teal-400'
-          }`}
-          style={{ width: `${Math.max(5, percent)}%` }}
+          className={`h-full rounded-control transition-all duration-300 ${failed ? "bg-danger" : "bg-white"}`}
+          style={{ width: `${Math.max(5, Math.min(100, percent))}%` }}
         />
       </div>
     </div>
