@@ -126,9 +126,38 @@ def list_projects():
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM projects ORDER BY created_at DESC")
-    rows = cursor.fetchall()
+    projects = []
+    for row in cursor.fetchall():
+        project = dict(row)
+        cursor.execute(
+            """
+            SELECT id, status, progress_text, progress_percent, created_at, completed_at
+            FROM runs
+            WHERE project_id = ?
+            ORDER BY created_at DESC
+            LIMIT 1
+            """,
+            (project["id"],),
+        )
+        run = cursor.fetchone()
+        project["latest_run"] = dict(run) if run else None
+        project["preview_url"] = None
+        if run:
+            cursor.execute(
+                """
+                SELECT file_path FROM captures
+                WHERE run_id = ? AND capture_type = 'full_page' AND file_path != ''
+                ORDER BY created_at ASC
+                LIMIT 1
+                """,
+                (run["id"],),
+            )
+            capture = cursor.fetchone()
+            if capture and capture["file_path"]:
+                project["preview_url"] = make_media_url(capture["file_path"])
+        projects.append(project)
     conn.close()
-    return [dict(r) for r in rows]
+    return projects
 
 @app.post("/api/projects")
 def create_project(data: ProjectCreate):

@@ -1,0 +1,93 @@
+/*
+  Visual Intelligence Studio — design tokens
+
+  Canonical source: Figma file nFHWQsVoLLCNDH3U37eBiq, Section 1 (30:319).
+  Measured from Wireframe 1 (29:2), Wireframe 3 (30:192) and Wireframe 4 (30:248).
+  Wireframe 2 (30:66) is a near-duplicate on a lighter canvas and is not the base.
+
+  Tokens marked "figma" are taken from that section.
+  Tokens marked "expanded" exist so the rest of the product (modals, forms,
+  progress, destructive actions, focus, responsive insets) can be built
+  without inventing a second palette.
+
+  Keep docs/design-system.md aligned with this file.
+*/
+
+:root {
+  /* Color — surfaces (figma) */
+  --color-canvas: #131415;
+  --color-sunken: #0c0d0d;
+  --color-surface: #242628;
+  --color-chip: #252627;
+  --color-media: #1d1d1e;
+
+  /* Color — surfaces (expanded) */
+  --color-overlay-surface: #1d1d1e;
+  --color-hover: #2c2e30;
+  --color-overlay: rgba(0, 0, 0, 0.72);
+
+  /* Color — text (figma) */
+  --color-text: #ffffff;
+  --color-ink: #262627;
+  --color-muted: #7e7e81;
+
+  /* Color — text (expanded) */
+  --color-subtle: #5c5c60;
+
+  /* Color — lines (figma border is the same hex as surface) */
+  --color-line: #242628;
+
+  /* Color — lines (expanded) */
+  --color-line-strong: #3a3c3e;
+
+  /* Color — action (figma primary button is white) */
+  --color-action: #ffffff;
+  --color-action-hover: #e8e8e8;
+
+  /* Color — status (expanded; the wireframes have no semantic color) */
+  --color-danger: #e5484d;
+  --color-danger-muted: #3a1d1f;
+
+  /* Typography — figma */
+  --font-sans: "Geist Sans", "Geist", sans-serif;
+  --text-display-size: 32px;
+  --text-display-line: 40px;
+  --text-body-size: 16px;
+  --text-body-line: 24px;
+
+  /* Typography — expanded */
+  --font-mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  --text-label-size: 13px;
+  --text-label-line: 20px;
+  --text-caption-size: 12px;
+  --text-caption-line: 16px;
+
+  /* Spacing — figma */
+  --space-6: 6px;
+  --space-8: 8px;
+  --space-10: 10px;
+  --space-12: 12px;
+  --space-16: 16px;
+  --space-24: 24px;
+  --space-40: 40px;
+  --space-80: 80px;
+
+  /* Spacing — expanded */
+  --space-4: 4px;
+  --space-32: 32px;
+  --space-page-inline-compact: 24px;
+  --space-page-block-compact: 40px;
+
+  /* Radius — figma */
+  --radius-control: 12px;
+  --radius-card: 24px;
+
+  /* Radius — expanded, only for tracks thinner than the control radius */
+  --radius-full: 999px;
+
+  /* Layout — figma artboard */
+  --page-max: 1440px;
+  --control-height: 48px;
+  --control-height-large: 56px;
+  --icon-24: 24px;
+}

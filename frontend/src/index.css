@@ -1,29 +1,68 @@
+@import "./design/tokens.css";
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 @layer base {
+  html,
+  body,
+  #root {
+    min-height: 100%;
+  }
+
   body {
-    background-color: #0B0F19;
-    color: #E2E8F0;
+    background-color: var(--color-canvas);
+    color: var(--color-text);
+    font-family: var(--font-sans);
+    font-size: var(--text-body-size);
+    line-height: var(--text-body-line);
+    font-weight: 400;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  ::selection {
+    background: var(--color-text);
+    color: var(--color-ink);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-text);
+    outline-offset: 2px;
   }
 }
 
-/* Custom scrollbars */
+@layer components {
+  .page-frame {
+    margin-inline: auto;
+    display: flex;
+    width: 100%;
+    max-width: var(--page-max);
+    min-height: 100vh;
+    flex-direction: column;
+    gap: var(--space-40);
+    padding: var(--space-80) var(--space-80) var(--space-40);
+  }
+
+  @media (max-width: 767px) {
+    .page-frame {
+      gap: var(--space-32);
+      padding: var(--space-page-block-compact) var(--space-page-inline-compact) var(--space-40);
+    }
+  }
+}
+
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 8px;
+  height: 8px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #0f172a;
+  background: var(--color-canvas);
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #334155;
-  border-radius: 9999px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: #475569;
+  background: var(--color-line-strong);
+  border-radius: var(--radius-full);
 }
