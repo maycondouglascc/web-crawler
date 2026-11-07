@@ -12,6 +12,8 @@ const ICONS = {
   search: { src: searchUrl, width: 24, height: 24 },
 } as const;
 
+export const FIGMA_ICON_ASSETS = ICONS;
+
 export type FigmaIconName = keyof typeof ICONS;
 
 export function FigmaIcon({ name }: { name: FigmaIconName }) {

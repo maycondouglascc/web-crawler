@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { KeyRound } from "lucide-react";
 import { AuthVaultModal } from "./components/AuthVaultModal";
+import { DesignDocs, readDocsStory } from "./components/docs/DesignDocs";
 import { DiscoveryReview } from "./components/DiscoveryReview";
 import { ExportDrawer } from "./components/ExportDrawer";
 import { LiveCrawlProgress } from "./components/LiveCrawlProgress";
@@ -64,6 +65,7 @@ export function App() {
   const [galleryTokens, setGalleryTokens] = useState<any[]>([]);
   const [recaptureRequestId, setRecaptureRequestId] = useState(0);
   const [isExportOpen, setIsExportOpen] = useState(false);
+  const [docsStory, setDocsStory] = useState<string | null>(() => readDocsStory());
 
   const wsRef = useRef<WebSocket | null>(null);
 
@@ -88,6 +90,12 @@ export function App() {
       return [] as Project[];
     }
   };
+
+  useEffect(() => {
+    const syncDocs = () => setDocsStory(readDocsStory());
+    window.addEventListener("hashchange", syncDocs);
+    return () => window.removeEventListener("hashchange", syncDocs);
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -322,6 +330,10 @@ export function App() {
   const canExport = runStatus === "completed" && !!currentRunId;
   const canRecapture = !!currentRunId && galleryScreens.length > 0 && (runStatus === "completed" || runStatus === "failed");
 
+  if (docsStory !== null) {
+    return <DesignDocs storyId={docsStory} />;
+  }
+
   return (
     <div className="min-h-screen bg-canvas text-white">
       {!projectsLoaded ? (
@@ -430,6 +442,9 @@ export function App() {
         onProfileSelected={(id) => setSelectedProfileId(id)}
       />
       {currentRunId && <ExportDrawer isOpen={isExportOpen} onClose={() => setIsExportOpen(false)} runId={currentRunId} />}
+      <a href="#/docs" className="fixed bottom-6 left-6 z-30 text-caption text-subtle hover:text-white">
+        Design system
+      </a>
     </div>
   );
 }

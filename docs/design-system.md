@@ -8,7 +8,7 @@ Este documento é a referência para evoluir a interface do Visual Intelligence 
 
 O Wireframe 2 (`30:66`) repete o detalhe do site num canvas mais claro (`#1D1D1E` com cards `#141415`). Ele não é a base. A base é o canvas `#131415` da seção ligada.
 
-A implementação vive em `frontend/src/design/tokens.css`. Os componentes em `frontend/src/components/ui/` consomem esses tokens pelo Tailwind. Não introduza hex novo numa tela. Se um caso não cabe num token, acrescente o token aqui e no CSS, com a marca `figma` ou `expanded`.
+A implementação vive em `frontend/src/design/tokens.css`. Os componentes em `frontend/src/components/ui/` consomem esses tokens pelo Tailwind. A mesma documentação abre ao vivo em `#/docs` (http://localhost:8000/#/docs com o Studio no ar). Não introduza hex novo numa tela. Se um caso não cabe num token, acrescente o token aqui e no CSS, com a marca `figma` ou `expanded`.
 
 ## O que o Figma define, e o que foi expandido
 
